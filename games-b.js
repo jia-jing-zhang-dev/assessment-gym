@@ -38,17 +38,26 @@ const PORTRAIT_ITEMS = [
 ];
 const DIMS = { social: ['Team', 'Independent'], structure: ['Planned', 'Flexible'], influence: ['Leading', 'Supporting'], focus: ['Detail', 'Big picture'], tempo: ['Fast', 'Thorough'] };
 IMPL.portrait = ctx => {
-  const items = shuffle(PORTRAIT_ITEMS).map(([d, a, b]) => Math.random() < 0.5 ? [d, a, b, 0] : [d, b, a, 1]);
+  // 20 within-dimension pairs plus 30 cross-dimension pairs (forced choice between two different traits) = 50 items
+  const bank = PORTRAIT_ITEMS.flatMap(([d, a, b]) => [{ d, pole: 0, ic: a[0], t: a[1] }, { d, pole: 1, ic: b[0], t: b[1] }]);
+  const within = PORTRAIT_ITEMS.map(([d, a, b]) => [{ d, pole: 0, ic: a[0], t: a[1] }, { d, pole: 1, ic: b[0], t: b[1] }]);
+  const cross = [], seen = new Set();
+  while (cross.length < 30) {
+    const x = pick(bank), y = pick(bank), k = [x.t, y.t].sort().join('|');
+    if (x.d === y.d || seen.has(k)) continue;
+    seen.add(k); cross.push([x, y]);
+  }
+  const items = shuffle([...within, ...cross]).map(p => shuffle(p));
   const score = Object.fromEntries(Object.keys(DIMS).map(d => [d, [0, 0]]));
   let i = 0;
   function show() {
     if (i >= items.length) return ctx.finish();
-    const [d, a, b, flip] = items[i];
+    const [a, b] = items[i];
     ctx.progress(`${i + 1} / ${items.length}`); ctx.level('Work style');
     ctx.stage.innerHTML = `<p class="prompt">Which describes you better?</p><div class="prog"><i style="width:${i / items.length * 100}%"></i></div>
-      <div class="pair"><button id="pa"><svg viewBox="0 0 100 100">${ICONS[a[0]]}</svg><span>${a[1]}</span></button><button id="pb"><svg viewBox="0 0 100 100">${ICONS[b[0]]}</svg><span>${b[1]}</span></button></div>`;
-    const choose = side => { score[d][side ^ flip]++; i++; show(); };
-    $('#pa').onclick = () => choose(0); $('#pb').onclick = () => choose(1);
+      <div class="pair"><button id="pa"><svg viewBox="0 0 100 100" aria-hidden="true">${ICONS[a.ic]}</svg><span>${a.t}</span></button><button id="pb"><svg viewBox="0 0 100 100" aria-hidden="true">${ICONS[b.ic]}</svg><span>${b.t}</span></button></div>`;
+    const choose = s => { score[s.d][s.pole]++; i++; show(); };
+    $('#pa').onclick = () => choose(a); $('#pb').onclick = () => choose(b);
   }
   ctx.key(e => { if (e.key === 'ArrowLeft') $('#pa')?.click(); if (e.key === 'ArrowRight') $('#pb')?.click(); });
   ctx.hint('Keyboard: ← left option · → right option');
@@ -71,6 +80,16 @@ const XT = [
   ['Composure', 'I get anxious before important events.', -1], ['Composure', 'I recover quickly from setbacks.', 1], ['Composure', 'I keep my emotions in check at work.', 1],
   ['Curiosity', 'I enjoy learning things outside my field.', 1], ['Curiosity', 'I prefer familiar ways of doing things.', -1], ['Curiosity', 'I ask “why” until I understand something properly.', 1],
   ['Curiosity', 'I seek out new tools and methods.', 1], ['Curiosity', 'Abstract ideas bore me.', -1], ['Curiosity', 'I like solving problems nobody has solved before.', 1],
+  ['Drive', 'I volunteer for the hardest part of a project.', 1], ['Drive', 'Once a task is “good enough” I stop.', -1],
+  ['Drive', 'I measure my progress against clear targets.', 1], ['Drive', 'I keep working on a goal after others give up.', 1],
+  ['Collaboration', 'I keep teammates updated without being asked.', 1], ['Collaboration', 'I prefer to fix problems myself rather than involve others.', -1],
+  ['Collaboration', 'I change my plan when a colleague has a better idea.', 1], ['Collaboration', 'Small talk with colleagues feels like a waste of time.', -1],
+  ['Organisation', 'I rarely need a reminder for a deadline.', 1], ['Organisation', 'I tend to start things at the last minute.', -1],
+  ['Organisation', 'I check my work against the brief before handing it in.', 1], ['Organisation', 'I keep a single list of everything I need to do.', 1],
+  ['Composure', 'I can take tough feedback without getting defensive.', 1], ['Composure', 'An unexpected problem can ruin my whole day.', -1],
+  ['Composure', 'I stay patient with people who are upset.', 1], ['Composure', 'I sleep well before a big day.', 1],
+  ['Curiosity', 'I read about topics just because they interest me.', 1], ['Curiosity', 'I prefer clear instructions to open-ended problems.', -1],
+  ['Curiosity', 'I enjoy hearing views that differ from mine.', 1], ['Curiosity', 'I like taking things apart to see how they work.', 1],
 ];
 IMPL.portraitxt = ctx => {
   const items = shuffle(XT), ans = [];
@@ -100,7 +119,7 @@ IMPL.portraitxt = ctx => {
 };
 
 /* ---------- E-Motions ---------- */
-const EMO = ['Happy', 'Sad', 'Angry', 'Surprised', 'Afraid', 'Disgusted', 'Contempt', 'Neutral'];
+const EMO = ['Happy', 'Sad', 'Angry', 'Surprised', 'Afraid', 'Disgusted'];
 function faceSVG(em, k, skin, hair) {
   const P = { Happy: { m: 1, eo: -0.25, cheek: 1 }, Sad: { m: -0.8, bi: 1, eo: -0.3 }, Angry: { bi: -1.1, bh: -0.3, m: -0.2, eo: -0.35, tight: 1 },
     Surprised: { bh: 1, eo: 0.75, open: 1 }, Afraid: { bh: 0.6, bi: 0.9, eo: 0.65, open: 0.45, wide: 1 }, Disgusted: { bi: -0.5, bh: -0.3, nose: 1, m: -0.5, eo: -0.3, lip: 1 },
@@ -130,9 +149,9 @@ IMPL.emotions = ctx => {
   function show() {
     lock = false; answer = pick(EMO);
     const k = Math.max(0.35, 1.05 - (lv - 1) * 0.12);
-    const opts = shuffle([answer, ...sample(EMO.filter(e => e !== answer), 3)]);
+    const opts = EMO;
     ctx.level(`Level ${lv}`);
-    ctx.stage.innerHTML = `<p class="prompt">Which emotion is this?</p>${faceSVG(answer, k, pick(SKIN), pick(HAIR))}<div class="opts">${opts.map((o, i) => `<button data-o="${o}"><span class="mono muted">${i + 1}</span> ${o}</button>`).join('')}</div>`;
+    ctx.stage.innerHTML = `<p class="prompt">Which emotion is this?</p>${faceSVG(answer, k, pick(SKIN), pick(HAIR))}<div class="opts six">${opts.map((o, i) => `<button data-o="${o}"><span class="mono muted">${i + 1}</span> ${o}</button>`).join('')}</div>`;
     t0 = performance.now();
     $$('.opts button', ctx.stage).forEach(b => b.onclick = () => choose(b));
   }
@@ -142,8 +161,8 @@ IMPL.emotions = ctx => {
     else { bad++; streak = 0; b.classList.add('wrong'); $(`.opts button[data-o="${answer}"]`, ctx.stage).classList.add('right'); confus[answer] = (confus[answer] || 0) + 1; ctx.flash('bad', 'It was ' + answer.toLowerCase()); lv = Math.max(1, lv - 1); }
     ctx.score(pts); ctx.after(900, show);
   }
-  ctx.key(e => { if (/^[1-4]$/.test(e.key)) $$('.opts button', ctx.stage)[+e.key - 1]?.click(); });
-  ctx.hint('Keyboard: 1–4');
+  ctx.key(e => { if (/^[1-6]$/.test(e.key)) $$('.opts button', ctx.stage)[+e.key - 1]?.click(); });
+  ctx.hint('Keyboard: 1–6');
   ctx.score(0); show();
   return { result() {
     const t = ok + bad, worst = Object.entries(confus).sort((a, b) => b[1] - a[1])[0];
@@ -152,34 +171,77 @@ IMPL.emotions = ctx => {
 };
 
 /* ---------- Teamchat ---------- */
+/* Each reply: [style, rating 0–2, text]. Rating 2 = the reply that both moves the work forward and keeps the relationship intact. */
 const CHAT = [
   { who: 'Priya (project lead)', msgs: ['Morning! The client moved the demo to Thursday instead of next week.', 'Can we still make it?'],
-    opts: [['S', 'That’s a big change. How is everyone feeling about the new date?'], ['D', 'Yes, if we cut the export feature from the demo. I’ll tell the team.'], ['A', 'Let me check the remaining tasks against the hours we have and get back to you within the hour.'], ['R', 'Let’s go for it. I’ll set up a stand-up for 10 to re-plan.']] },
+    opts: [['A', 2, 'Let me check the remaining tasks against our hours and come back to you within the hour.'], ['R', 1, 'Sure, we’ll make it happen somehow.'], ['S', 0, 'That’s really stressful. Why do clients always do this?']],
+    why: 'Committing before checking the work is risky; complaining helps no one. A quick, time-boxed check gives Priya a real answer.' },
   { who: 'Marco (designer)', msgs: ['Honestly I’m a bit lost on what the client actually wants from the dashboard.'],
-    opts: [['S', 'Totally fair, the brief was vague. Want to talk it through together?'], ['A', 'Let’s list their three main questions from the brief and map each one to a chart.'], ['D', 'They want revenue by region up front. Start there.'], ['R', 'Make a rough version today and we’ll get feedback from them tomorrow.']] },
+    opts: [['S', 2, 'Fair, the brief was vague. Want 15 minutes now to list their main questions together?'], ['D', 1, 'Revenue by region. Start there.'], ['R', 0, 'Just make something and we’ll see what they say.']],
+    why: 'Offering short, concrete help clears the confusion and keeps Marco engaged.' },
   { who: 'Lena (developer)', msgs: ['I found a bug in the login flow that might delay my part.', 'Not sure how long it’ll take yet.'],
-    opts: [['A', 'Can you share the error log? I want to see whether it blocks the demo path.'], ['S', 'Thanks for flagging it early. Shout if you want a second pair of eyes.'], ['R', 'Timebox it to two hours. If it’s not fixed by then we’ll work around it.'], ['D', 'Please make this the top priority over everything else today.']] },
+    opts: [['R', 2, 'Thanks for flagging it early. Give it two hours; if it’s not fixed by then, let’s plan a workaround together.'], ['D', 1, 'Make it your top priority today.'], ['A', 0, 'How did this bug get in there in the first place?']],
+    why: 'A time-box plus a fallback keeps the schedule safe; looking for blame now slows everyone down.' },
   { who: 'Sam (intern)', msgs: ['Sorry to bother you… I sent the wrong file version to the client yesterday.'],
-    opts: [['S', 'Don’t worry, it happens. Let’s fix it together. What did they receive?'], ['D', 'Send the right version now with a short correction note, then let me know.'], ['A', 'Which version did they get? Let’s check what differs before we reply.'], ['R', 'I’ll call them now and sort it. You prep the right file.']] },
-  { who: 'Jordan (manager)', msgs: ['Quick one: the budget review flagged that we’re 15% over on contractor hours.'],
-    opts: [['A', 'I’ll pull the hours by task so we can see where the overrun came from.'], ['D', 'Understood. We’ll stop new contractor work until next month.'], ['S', 'Let me talk to the contractors first; they may not know they’re over.'], ['R', 'Let’s cut scope on the low-value tasks this week and get back on track.']] },
+    opts: [['S', 2, 'Thanks for telling me straight away. Send the right version with a one-line correction, and copy me in.'], ['R', 1, 'I’ll deal with the client myself.'], ['D', 0, 'You need to be more careful with client files.']],
+    why: 'Thanking Sam for honesty and giving a clear fix teaches more than taking over or scolding.' },
+  { who: 'Jordan (manager)', msgs: ['Quick one: budget review says we’re 15% over on contractor hours.'],
+    opts: [['A', 2, 'I’ll break the hours down by task today so we can see where it came from and what to cut.'], ['D', 1, 'We’ll stop all contractor work until next month.'], ['S', 0, 'Everyone has been working really hard, so it’s understandable.']],
+    why: 'Understanding the cause first leads to a targeted fix rather than a blunt stop.' },
   { who: 'Priya (project lead)', msgs: ['Marco and Lena disagree on whether to rebuild the charts or patch them.', 'Can you weigh in?'],
-    opts: [['S', 'Let’s get them both on a call so each can explain their view.'], ['A', 'What does each option cost in hours, and what’s the risk for Thursday?'], ['D', 'Patch them for Thursday. Rebuild after the demo.'], ['R', 'Whoever can ship by Wednesday noon wins. Let’s decide in 10 minutes.']] },
+    opts: [['A', 2, 'Let’s get both on a 10-minute call with the hours and risk for each option, then decide.'], ['D', 1, 'Patch them. We don’t have time.'], ['S', 0, 'I’d rather not take sides between them.']],
+    why: 'Hearing both views with facts gives a decision both people can accept.' },
   { who: 'Lena (developer)', msgs: ['I’ve been working late every night this week. I’m pretty tired.'],
-    opts: [['S', 'Thank you for pushing so hard. Please log off early today; I’ll cover the review.'], ['D', 'Let’s move one of your tasks to me so you can stop by 6.'], ['A', 'Let’s look at what’s taking the most time so we can fix the workload, not just this week.'], ['R', 'Two more days and we’re through the demo. Then take a proper break.']] },
-  { who: 'Client (via Priya)', msgs: ['The client loved the demo but wants a new feature added before launch.'],
-    opts: [['A', 'Let’s estimate it properly before we commit to anything.'], ['D', 'We should say no for launch and offer it in phase two.'], ['S', 'Great news! Let’s ask the team how they feel about taking it on.'], ['R', 'Let’s say yes and start scoping it today.']] },
-  { who: 'Marco (designer)', msgs: ['I’ve got an idea for a totally new layout. It’s risky but could look amazing.'],
-    opts: [['R', 'Love it. Build a quick prototype and let’s see.'], ['A', 'What problem does it solve that the current layout doesn’t?'], ['S', 'Sounds exciting! Want to show me a sketch first?'], ['D', 'Not before launch. Park it in the backlog.']] },
+    opts: [['S', 2, 'Thank you for pushing so hard. Let’s move one task off your plate so you can finish on time today.'], ['R', 1, 'Two more days until the demo, then rest properly.'], ['D', 0, 'Everyone is busy right now.']],
+    why: 'Acting on the workload, not just sympathising, protects both Lena and the project.' },
+  { who: 'Priya (project lead)', msgs: ['The client loved the demo but wants a new feature before launch.'],
+    opts: [['A', 2, 'Great news. Let’s estimate it before we commit, then offer them options: now with a later date, or in phase two.'], ['R', 1, 'Let’s say yes and start today.'], ['D', 0, 'No. Scope is closed.']],
+    why: 'Giving the client informed options keeps the relationship strong without overpromising.' },
+  { who: 'Marco (designer)', msgs: ['I’ve got an idea for a totally new layout. Risky, but it could look amazing.'],
+    opts: [['R', 2, 'I like it. Can you mock up one screen by Friday so we can test it without risking launch?'], ['D', 1, 'Not before launch. Put it in the backlog.'], ['S', 0, 'Sounds cool, do whatever you think is best.']],
+    why: 'A small, safe test encourages the idea and protects the deadline.' },
   { who: 'Jordan (manager)', msgs: ['Great work on the launch, everyone.', 'Who should I call out in the team update?'],
-    opts: [['S', 'Lena carried a lot this month; she deserves the shout-out.'], ['D', 'The whole team. Name everyone.'], ['A', 'Lena for the login fix and Marco for the layout; both moved the numbers.'], ['R', 'Everyone, plus a note about what we’re tackling next.']] },
+    opts: [['A', 2, 'Lena for the login fix and Marco for the layout, both specific wins, plus a thank-you to the whole team.'], ['D', 1, 'Just name the whole team.'], ['R', 0, 'Me, I coordinated most of it.']],
+    why: 'Specific credit is more meaningful, and including the team keeps it fair.' },
+  { who: 'Sam (intern)', msgs: ['Can I ask a dumb question? I don’t understand how the reporting tool works.'],
+    opts: [['S', 2, 'Not dumb at all. I’ll show you for 10 minutes after lunch and send you the guide.'], ['D', 1, 'There’s a guide on the wiki.'], ['R', 0, 'I’m slammed, ask someone else.']],
+    why: 'A little time now saves many questions later and builds trust.' },
+  { who: 'Jordan (manager)', msgs: ['Can you take on the onboarding project as well? It would start next week.'],
+    opts: [['A', 2, 'I’d like to. With my current work that’s too much, so could we push the dashboard by a week or move part of it to Sam?'], ['R', 1, 'Sure, I’ll fit it in.'], ['D', 0, 'No, I’m too busy.']],
+    why: 'Saying yes with a clear trade-off is honest and keeps quality up.' },
+  { who: 'Lena (developer)', msgs: ['Marco keeps changing the designs after I’ve built them. It’s frustrating.'],
+    opts: [['S', 2, 'That sounds frustrating. Shall we agree with Marco on a design sign-off before build starts?'], ['D', 1, 'Tell Marco to stop changing them.'], ['R', 0, 'Just build whatever the latest version is.']],
+    why: 'Fixing the process prevents the conflict from repeating.' },
+  { who: 'Client (via Priya)', msgs: ['The client says the report numbers look wrong and they’re unhappy.'],
+    opts: [['A', 2, 'Thanks. I’ll check the numbers against the source data right now and update them within two hours either way.'], ['S', 1, 'I’m so sorry, we’ll fix everything.'], ['D', 0, 'The numbers are right, they must be reading it wrong.']],
+    why: 'Taking it seriously and giving a time-bound check rebuilds confidence.' },
+  { who: 'Marco (designer)', msgs: ['I missed the deadline for the icons. Family emergency yesterday.'],
+    opts: [['S', 2, 'I’m sorry, I hope everyone is OK. Take what you need; I’ll let Priya know and we’ll set a new date when you’re ready.'], ['R', 1, 'No problem, can you send them today?'], ['D', 0, 'You should have told us earlier.']],
+    why: 'People first; then make a realistic plan.' },
+  { who: 'Priya (project lead)', msgs: ['We need someone to present the results at Monday’s all-hands.'],
+    opts: [['R', 2, 'I can do it. I’ll draft slides by Friday and run them past you.'], ['S', 1, 'Maybe Sam would like the experience?'], ['A', 0, 'What exactly would they need to present?']],
+    why: 'Volunteering with a clear plan moves things forward. Suggesting Sam can be good too if you offer to support them.' },
+  { who: 'Sam (intern)', msgs: ['I finished my tasks early. Anything else I can help with?'],
+    opts: [['R', 2, 'Great! Could you test the new export feature and log any bugs you find?'], ['S', 1, 'Nice work, take it easy for the afternoon.'], ['D', 0, 'Not right now.']],
+    why: 'A concrete, useful task builds Sam’s skills and helps the team.' },
+  { who: 'Jordan (manager)', msgs: ['Leadership wants us to switch to a new project tool next month.', 'Thoughts?'],
+    opts: [['A', 2, 'Open to it. Could we pilot it on one project first and list what we’d need to migrate?'], ['R', 1, 'Let’s switch everything over this week.'], ['D', 0, 'The current tool works fine, let’s not.']],
+    why: 'A pilot balances openness with managing risk.' },
+  { who: 'Lena (developer)', msgs: ['I think there’s a better way to structure the database, but it means redoing some work.'],
+    opts: [['A', 2, 'Interesting. Can you write up the benefits and the hours it would take, so we can decide after the release?'], ['R', 1, 'Let’s do it now while it’s fresh.'], ['D', 0, 'No, we don’t have time for redoing work.']],
+    why: 'Taking the idea seriously without derailing the release keeps Lena motivated.' },
+  { who: 'Priya (project lead)', msgs: ['Retro time! What should we do differently on the next project?'],
+    opts: [['S', 2, 'Agree on designs before build, and give clients one clear contact. I’d love to hear what others think too.'], ['A', 1, 'We should track hours more carefully.'], ['D', 0, 'Nothing really, it went fine.']],
+    why: 'Specific improvements plus inviting others makes the retro useful.' },
 ];
 IMPL.teamchat = ctx => {
   const STY = { S: 'Supportive', D: 'Direct', A: 'Analytical', R: 'Driving' };
-  const tally = { S: 0, D: 0, A: 0, R: 0 }, rts = [];
-  let i = 0, t0;
+  const tally = { S: 0, D: 0, A: 0, R: 0 }, rts = [], log = [];
+  let i = 0, t0, pts = 0;
   ctx.stage.innerHTML = `<div class="chat" id="ch"><div class="msg sys">#project-atlas · You joined the channel</div></div><div class="typing" id="ty"></div><div class="replies" id="rp"></div>`;
   const ch = $('#ch'), ty = $('#ty'), rp = $('#rp');
+  ctx.key(e => { if (/^[1-3]$/.test(e.key)) $$('button', rp)[+e.key - 1]?.click(); });
+  ctx.score(0);
   const add = (cls, html) => { ch.insertAdjacentHTML('beforeend', `<div class="msg ${cls}">${html}</div>`); ch.scrollTop = ch.scrollHeight; };
   function scene() {
     if (i >= CHAT.length) return ctx.after(600, ctx.finish);
@@ -188,8 +250,15 @@ IMPL.teamchat = ctx => {
     const nextMsg = () => {
       if (j >= s.msgs.length) {
         ty.textContent = ''; t0 = performance.now();
-        rp.innerHTML = shuffle(s.opts).map(([k, t]) => `<button data-k="${k}">${esc(t)}</button>`).join('');
-        $$('button', rp).forEach(b => b.onclick = () => { if (!rp.contains(b)) return; tally[b.dataset.k]++; rts.push(performance.now() - t0); add('me', esc(b.textContent)); rp.innerHTML = ''; i++; ctx.after(700, scene); });
+        const opts = shuffle(s.opts);
+        rp.innerHTML = opts.map((o, n) => `<button data-n="${n}"><span class="mono muted">${n + 1}</span> ${esc(o[2])}</button>`).join('');
+        $$('button', rp).forEach(b => b.onclick = () => {
+          if (!rp.contains(b)) return;
+          const o = opts[+b.dataset.n], top = s.opts.find(x => x[1] === 2);
+          tally[o[0]]++; pts += o[1] * 5; rts.push(performance.now() - t0);
+          log.push({ prompt: s.msgs[s.msgs.length - 1], mine: o[2], best: top[2], q: o[1], why: s.why });
+          ctx.score(pts); add('me', esc(o[2])); rp.innerHTML = ''; i++; ctx.after(700, scene);
+        });
         return;
       }
       ty.textContent = s.who.split(' ')[0] + ' is typing…';
@@ -197,13 +266,16 @@ IMPL.teamchat = ctx => {
     };
     nextMsg();
   }
-  ctx.hint('Pick the reply closest to what you would actually send.');
+  ctx.hint('Pick the reply you think works best. Every reply is rated; the review at the end shows the strongest one.');
   scene();
   return { result() {
     const tot = Object.values(tally).reduce((a, b) => a + b, 0);
     const top = Object.entries(tally).sort((a, b) => b[1] - a[1])[0];
-    return { stats: [['Answered', `${tot}/${CHAT.length}`], ['Strongest style', tot ? STY[top[0]] : '–'], ['Median reply time', tot ? (median(rts) / 1000).toFixed(1) + ' s' : '–']],
+    const best = log.filter(l => l.q === 2).length;
+    return { score: pts, accuracy: tot ? best / tot : null,
+      stats: [['Answered', `${tot}/${CHAT.length}`], ['Strongest reply chosen', `${best}/${tot}`], ['Main style', tot ? STY[top[0]] : '–'], ['Median reply time', tot ? (median(rts) / 1000).toFixed(1) + ' s' : '–']],
       profile: Object.entries(STY).map(([k, l]) => ({ label: l, value: tot ? tally[k] / tot * 100 : 0 })),
-      note: 'Share of your replies in each style. Supportive: people first. Direct: clear decisions. Analytical: facts first. Driving: momentum first.' };
+      note: 'Share of your replies in each style. Supportive: people first. Direct: clear decisions. Analytical: facts first. Driving: momentum first.',
+      review: log.map(l => ({ prompt: l.prompt, mine: l.mine, best: l.best, q: l.q, why: l.why })) };
   } };
 };
