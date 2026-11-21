@@ -7,7 +7,9 @@ IMPL.flashback = ctx => {
   const SH = Object.keys(SHAPES), CO = STIM.slice(0, 4);
   let li = 0, maxLi = 0, seq = [], bOk = 0, bN = 0, answered = true, can = false, t0 = 0, pts = 0;
   const st = { hit: 0, cr: 0, miss: 0, fa: 0, slow: 0 }, rts = [];
-  ctx.stage.innerHTML = `<p class="prompt" id="fq">Get ready</p><div class="stim-card blank" id="fc"></div>
+  const CNAME = ['red', 'blue', 'green', 'yellow'];
+  const describe = it => (L().c ? CNAME[CO.indexOf(it.c)] + ' ' : '') + it.s;
+  ctx.stage.innerHTML = `<p class="prompt" id="fq">Get ready</p><div class="stim-card blank" id="fc"></div>${ctx.tutorial ? '<div class="fhist" id="fh" aria-label="Recent cards"></div>' : ''}
     <div class="btnrow"><button class="btn yes" id="fy">Match <kbd>←</kbd></button><button class="btn no" id="fn">No match <kbd>→</kbd></button></div>`;
   ctx.hint('Keyboard: ← Match · → No match. On touch screens, swipe the card left or right.');
   const q = $('#fq'), card = $('#fc'), by = $('#fy'), bn = $('#fn');
@@ -33,10 +35,14 @@ IMPL.flashback = ctx => {
     q.textContent = can ? `Does this match the one ${l.n} back?` : 'Remember this shape';
     card.classList.remove('blank'); card.innerHTML = shapeSVG(it.s, it.c, 130);
     by.disabled = bn.disabled = !can; answered = !can; t0 = performance.now();
-    ctx.after(can ? 2000 : 1500, () => {
+    if (ctx.tutorial) { // show the cards before this one, with the one to compare against outlined
+      const prev = seq.slice(Math.max(0, seq.length - 1 - l.n), -1);
+      $('#fh').innerHTML = prev.length ? `<span class="small muted">Earlier cards</span>${prev.map((p, i) => `<span class="${i === 0 && can ? 'cmp' : ''}">${shapeSVG(p.s, p.c, 34)}</span>`).join('')}<span class="small muted">→ now</span>` : '';
+    }
+    ctx.after((can ? 2000 : 1500) * ctx.slow, () => {
       card.classList.add('blank'); card.innerHTML = '';
-      ctx.after(can ? 700 : 450, () => {
-        if (!answered) { answered = true; st.slow++; bN++; ctx.flash('slow', 'Too slow'); }
+      ctx.after((can ? 700 : 450) * ctx.slow, () => {
+        if (!answered) { answered = true; st.slow++; bN++; ctx.flash('slow', 'Too slow'); ctx.explain('Answer while the card is showing or in the short gap after it. A guess beats no answer.'); }
         if (bN >= 10) {
           const acc = bOk / bN;
           if (acc >= 0.8 && li < LV.length - 1) { li++; maxLi = Math.max(maxLi, li); setLevel('up'); return inter('Level up'); }
@@ -52,7 +58,12 @@ IMPL.flashback = ctx => {
     const l = L(), k = seq.length, isM = same(seq[k - 1], seq[k - 1 - l.n]);
     rts.push(performance.now() - t0); bN++;
     if (m === isM) { bOk++; pts += l.n + l.c; isM ? st.hit++ : st.cr++; ctx.flash('ok', 'Correct'); }
-    else { isM ? st.miss++ : st.fa++; ctx.flash('bad', 'Incorrect'); }
+    else {
+      isM ? st.miss++ : st.fa++; ctx.flash('bad', 'Incorrect');
+      const back = seq[k - 1 - l.n];
+      ctx.explain(isM ? `The card ${l.n} back was also a ${describe(back)}, so this was a Match.`
+        : `The card ${l.n} back was a ${describe(back)}${l.c && back.s === seq[k - 1].s ? ': same shape but a different colour' : ''}, so this was No match.`);
+    }
     ctx.score(pts);
   }
   by.onclick = () => answer(true); bn.onclick = () => answer(false);
@@ -78,7 +89,7 @@ IMPL.flashback = ctx => {
 
 /* ---------- Numerosity ---------- */
 IMPL.numerosity = ctx => {
-  let lv = 1, maxLv = 1, streak = 0, misses = 0, pts = 0, ok = 0, bad = 0, skips = 0, tiles = [], sel = new Set(), k = 2, type = 'sum', target = 0, t0 = 0, lock = false;
+  let lv = 1, maxLv = 1, streak = 0, misses = 0, pts = 0, ok = 0, bad = 0, skips = 0, tiles = [], sel = new Set(), k = 2, type = 'sum', target = 0, t0 = 0, lock = false, solIdx = [];
   const rts = [];
   ctx.stage.innerHTML = `<p class="prompt" id="nq"></p><div class="tiles" id="nt"></div><p class="calc" id="nc"></p>
     <div class="btnrow"><button class="btn ghost" id="nclr">Clear</button><button class="btn ghost" id="nskip">Skip</button></div>`;
@@ -96,7 +107,7 @@ IMPL.numerosity = ctx => {
     type = pick(pool);
     k = type === 'sum' ? (lv < 3 ? 2 : lv < 6 ? 3 : 4) : 2;
     tiles = Array.from({ length: n }, () => type === 'product' || type === 'quot' ? 2 + rnd(11) : 1 + rnd(hi));
-    let idx = sample([...tiles.keys()], k);
+    let idx = sample([...tiles.keys()], k); solIdx = idx;
     if (type === 'quot') { const b = tiles[idx[0]]; tiles[idx[1]] = b * (2 + rnd(6)); }
     if (type === 'diff' && tiles[idx[0]] === tiles[idx[1]]) tiles[idx[1]] += 1 + rnd(5);
     target = OPS[type].val(idx.map(i => tiles[i]));
@@ -120,7 +131,11 @@ IMPL.numerosity = ctx => {
     const val = +OPS[type].val([...sel].map(i => tiles[i])).toFixed(2);
     rts.push(performance.now() - t0);
     if (val === target) { ok++; pts += k * lv; streak++; misses = 0; ctx.flash('ok', 'Correct'); if (streak >= 2) { lv++; maxLv = Math.max(maxLv, lv); streak = 0; } }
-    else { bad++; streak = 0; misses++; ctx.flash('bad', `${val} ≠ ${target}`); if (misses >= 2) { lv = Math.max(1, lv - 1); misses = 0; } }
+    else {
+      bad++; streak = 0; misses++; ctx.flash('bad', `${val} ≠ ${target}`); if (misses >= 2) { lv = Math.max(1, lv - 1); misses = 0; }
+      const s = solIdx.map(i => tiles[i]);
+      ctx.explain(`One answer was ${s.join(` ${OPS[type].sym} `)} = ${target}. Start from the largest number and work out what is still needed.`);
+    }
     ctx.score(pts); ctx.after(450, puzzle);
   }
   $('#nclr').onclick = () => { if (lock) return; sel.clear(); $$('#nt .tile').forEach(b => b.classList.remove('sel')); calc(); };
@@ -219,7 +234,7 @@ IMPL.digitspan = ctx => {
     const step = () => {
       if (i >= seq.length) return ctx.after(400, entry);
       $('#dc').textContent = seq[i++];
-      ctx.after(850, () => { $('#dc').textContent = ''; ctx.after(250, step); });
+      ctx.after(850 * ctx.slow, () => { $('#dc').textContent = ''; ctx.after(250 * ctx.slow, step); });
     };
     ctx.after(500, step);
   }
@@ -239,7 +254,11 @@ IMPL.digitspan = ctx => {
     const want = back ? seq.slice().reverse() : seq;
     if (back) backN++;
     if (input === want.join('')) { ok++; if (back) backOk++; pts += len + (back ? 2 : 0); ctx.flash('ok', 'Correct'); len++; maxLen = Math.max(maxLen, len - 1); wrongRow = 0; }
-    else { bad++; ctx.flash('bad', 'Answer: ' + want.join(' '), 1400); if (++wrongRow >= 2) { len = Math.max(3, len - 1); wrongRow = 0; } }
+    else {
+      bad++; ctx.flash('bad', 'Answer: ' + want.join(' '), 1400); if (++wrongRow >= 2) { len = Math.max(3, len - 1); wrongRow = 0; }
+      ctx.explain(back ? `This round wanted the string last to first: ${seq.join(' ')} becomes ${want.join(' ')}.`
+        : `You typed ${input || 'nothing'}; it was ${want.join('')}. Try grouping it into chunks of three as it plays.`);
+    }
     ctx.score(pts); ctx.after(1300, round);
   }
   ctx.key(e => {
@@ -269,7 +288,7 @@ IMPL.disconumbers = ctx => {
     const step = () => {
       if (i >= seq.length) { phase = 'order'; $('#dq').textContent = 'Tap the circles in the same order'; btns.forEach(b => b.disabled = false); return; }
       const b = btns[seq[i++]]; b.classList.add('lit'); if (hidden) b.textContent = nums[+b.dataset.i];
-      ctx.after(650, () => { b.classList.remove('lit'); if (hidden) b.textContent = ''; ctx.after(250, step); });
+      ctx.after(650 * ctx.slow, () => { b.classList.remove('lit'); if (hidden) b.textContent = ''; ctx.after(250 * ctx.slow, step); });
     };
     ctx.after(600, step);
   }
@@ -279,7 +298,8 @@ IMPL.disconumbers = ctx => {
     if (clicks.length === seq.length) {
       phase = 'sum';
       const right = clicks.every((c, j) => c === seq[j]);
-      if (right) { orderOk++; pts += len; ctx.flash('ok', 'Order correct'); } else ctx.flash('bad', 'Order incorrect');
+      if (right) { orderOk++; pts += len; ctx.flash('ok', 'Order correct'); }
+      else { ctx.flash('bad', 'Order incorrect'); ctx.explain(`The lit order was ${seq.map(j => nums[j]).join(' → ')}. Remember it as a path shape across the grid.`); }
       ctx.score(pts);
       $$('.disc button', ctx.stage).forEach(x => x.disabled = true);
       const sum = seq.reduce((s, j) => s + nums[j], 0);
@@ -290,7 +310,8 @@ IMPL.disconumbers = ctx => {
         if (phase !== 'sum') return; phase = 'wait';
         const good = +x.dataset.v === sum;
         x.classList.add(good ? 'right' : 'wrong');
-        if (good) { sumOk++; pts += len; ctx.flash('ok', 'Sum correct'); } else ctx.flash('bad', 'The sum was ' + sum, 1100);
+        if (good) { sumOk++; pts += len; ctx.flash('ok', 'Sum correct'); }
+        else { ctx.flash('bad', 'The sum was ' + sum, 1100); ctx.explain(`${seq.map(j => nums[j]).join(' + ')} = ${sum}. Keep a running total while the circles light up.`); }
         ctx.score(pts);
         if (good && right) { len++; maxLen = Math.max(maxLen, len); } else if (!good && !right) len = Math.max(3, len - 1);
         ctx.after(1100, round);
@@ -330,7 +351,7 @@ IMPL.puzzle = ctx => {
     do board = shuffle([...Array(G * G).keys()]); while (board.every((p, i) => p === i));
     ctx.level(`Level ${lv} · ${G}×${G}`);
     ctx.stage.style.setProperty('--img', `url(${img})`);
-    let left = 5;
+    let left = Math.round(5 * ctx.slow);
     ctx.stage.innerHTML = `<p class="prompt">Memorise this image · <span class="mono" id="pc">${left}</span>s</p><div class="pzimg" style="background-image:var(--img)"></div><div class="btnrow"><button class="btn" id="pgo">I’m ready</button></div>`;
     $('#pgo').onclick = build;
     const tick = () => { if (!$('#pc')) return; left--; if (left <= 0) return build(); $('#pc').textContent = left; ctx.after(1000, tick); };
@@ -360,7 +381,7 @@ IMPL.puzzle = ctx => {
     const right = board.filter((p, i) => p === i).length, n = G * G;
     placedOk += right; placedAll += n;
     if (right === n) { perfect++; pts += n + G * 2; lv++; ctx.flash('ok', `Solved in ${moves} swaps`); }
-    else { pts += Math.floor(right / 2); ctx.flash('bad', `${right} of ${n} tiles in place`, 1200); }
+    else { pts += Math.floor(right / 2); ctx.flash('bad', `${right} of ${n} tiles in place`, 1200); ctx.explain('Red outlines show misplaced tiles. Fix the corners first, then one row at a time.'); }
     ctx.score(pts);
     draw(); building = false;
     $$('.pzboard div', ctx.stage).forEach((d, i) => { d.onclick = null; d.onkeydown = null; d.style.outline = board[i] === i ? '3px solid var(--ok)' : '3px solid var(--bad)'; d.style.outlineOffset = '-3px'; });
@@ -412,7 +433,12 @@ IMPL.shapedance = ctx => {
     });
     hits += h; fas += f; misses += m;
     pts = Math.max(0, pts + h - f + (f + m === 0 ? lv : 0));
-    if (f + m === 0) { perfect++; lv++; ctx.flash('ok', 'All found'); } else ctx.flash('bad', `${h} found · ${m} missed · ${f} wrong`, 1200);
+    if (f + m === 0) { perfect++; lv++; ctx.flash('ok', 'All found'); }
+    else {
+      ctx.flash('bad', `${h} found · ${m} missed · ${f} wrong`, 1200);
+      const need = ['shape', 'colour', ...(tgt.f !== 'solid' || lv >= 3 ? ['fill'] : [])].join(', ').replace(/, ([^,]*)$/, ' and $1');
+      ctx.explain(`Green outlines are the matches. A match has the same ${need}${lv >= 5 ? '; rotation doesn’t matter' : ''}. Red outlines were wrong picks or missed matches.`);
+    }
     ctx.score(pts); ctx.after(1100, round);
   }
   ctx.key(e => { if (e.key === 'Enter') done(); });
@@ -455,8 +481,9 @@ IMPL.singularity = ctx => {
       if (lock) return; lock = true; rts.push(performance.now() - t0);
       const i = +b.dataset.i;
       if (i === odd) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Found it'); if (++streak >= 2) { lv++; streak = 0; } }
-      else { bad++; streak = 0; b.classList.add('wrong'); $$('.sgrid button', ctx.stage)[odd].classList.add('right'); ctx.flash('bad', 'Not that one'); lv = Math.max(1, lv - (bad % 2 === 0 ? 1 : 0)); }
-      ctx.score(pts); ctx.after(800, round);
+      else { bad++; streak = 0; b.classList.add('wrong'); $$('.sgrid button', ctx.stage)[odd].classList.add('right'); ctx.flash('bad', 'Not that one'); lv = Math.max(1, lv - (bad % 2 === 0 ? 1 : 0));
+        ctx.explain(`The odd one (green) is a mirror image of the others${rotate ? '. The rest are only rotated, which still counts as the same shape' : ''}.`); }
+      ctx.score(pts); ctx.after(ctx.tutorial && i !== odd ? 2200 : 800, round);
     });
   }
   ctx.hint('Rotations are the same shape. Mirror images are different.');
@@ -482,21 +509,21 @@ IMPL.pulse = ctx => {
     cur = { red, lure, t: performance.now(), done: false }; shown++;
     dt.style.left = (10 + Math.random() * 80) + '%'; dt.style.top = (14 + Math.random() * 72) + '%'; dt.style.background = color;
     dt.classList.add('on');
-    const life = Math.max(480, 850 - l * 80);
+    const life = Math.max(480, 850 - l * 80) * ctx.slow;
     ctx.after(life, () => {
       dt.classList.remove('on');
-      if (cur && cur.red && !cur.done) { misses++; pts -= 5; nudge(-1); ctx.flash('slow', 'Missed'); ctx.score(pts); }
+      if (cur && cur.red && !cur.done) { misses++; pts -= 5; nudge(-1); ctx.flash('slow', 'Missed'); ctx.explain('That was red. Press Space or tap as soon as a red dot appears.'); ctx.score(pts); }
       else if (cur && !cur.red && !cur.done) { cr++; pts += 2; nudge(0.25); ctx.score(pts); }
       cur = null;
-      ctx.after(Math.max(350, 1000 - l * 90) + rnd(500), spawn);
+      ctx.after((Math.max(350, 1000 - l * 90) + rnd(500)) * ctx.slow, spawn);
     });
   }
   function respond() {
     if (cur && !cur.done) {
       cur.done = true;
       if (cur.red) { const rt = performance.now() - cur.t; rts.push(rt); hits++; pts += 10 + Math.max(0, Math.round((600 - rt) / 60)); nudge(0.5); ctx.flash('ok', Math.round(rt) + ' ms'); }
-      else { fas++; if (cur.lure) lureFa++; pts -= 10; nudge(-1); ctx.flash('bad', 'Not red'); }
-    } else if (!cur) { fas++; pts -= 10; nudge(-1); ctx.flash('bad', 'No dot'); }
+      else { fas++; if (cur.lure) lureFa++; pts -= 10; nudge(-1); ctx.flash('bad', 'Not red'); ctx.explain(cur.lure ? 'Orange is a lure. Only true red counts.' : 'Only red dots need a response. Let every other colour pass.'); }
+    } else if (!cur) { fas++; pts -= 10; nudge(-1); ctx.flash('bad', 'No dot'); ctx.explain('There was no dot on screen. Wait for red before pressing.'); }
     ctx.score(pts);
   }
   ar.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx.alive) respond(); });

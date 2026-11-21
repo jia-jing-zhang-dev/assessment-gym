@@ -299,6 +299,20 @@ h1[tabindex="-1"]:focus{outline:none}
 label{display:grid;gap:4px;font-weight:500}
 label.chk{display:flex;font-weight:400}
 
+/* tutorial coach */
+.coach{background:var(--accent-soft);border:1px solid var(--accent);border-radius:var(--r);padding:14px 16px;margin-bottom:12px;display:grid;gap:10px}
+.coach-top{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.coach-top .sp{flex:1}
+.coach-step{font-size:1rem}
+.coach-step b{color:var(--accent);margin-right:6px}
+.coach-why{background:var(--surface);border-left:4px solid var(--signal);padding:8px 12px;border-radius:0 8px 8px 0;font-size:.92rem}
+.coach .row .sp{flex:1}
+.coach.ready{border-color:var(--ok);box-shadow:0 0 0 3px color-mix(in srgb,var(--ok) 25%,transparent)}
+.coach.ready #cgoal{color:var(--ok);font-weight:600}
+.fhist{display:flex;align-items:center;gap:8px;flex-wrap:wrap;justify-content:center;min-height:44px}
+.fhist > span:not(.small){display:grid;place-items:center;width:44px;height:44px;border-radius:8px;background:var(--sunk);border:2px solid transparent}
+.fhist > span.cmp{border-color:var(--signal);background:var(--surface)}
+
 /* game feel: feedback animations */
 .iconbtn{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
 .iconbtn:hover{color:var(--ink);background:var(--sunk)}

@@ -201,20 +201,28 @@ const levelNum = t => { const m = String(t).match(/\d+/); return m ? +m[0] : nul
 let ACTIVE = null;
 function stopActive() { if (ACTIVE) { ACTIVE.kill(); ACTIVE = null; } }
 
-function startGame(meta, { quick = false, onDone = null, mock = false, label = '' } = {}) {
+const TUTORIAL_GOAL = 5; // correct answers before the tutorial says you are ready
+function startGame(meta, { quick = false, onDone = null, mock = false, label = '', tutorial = false } = {}) {
   stopActive();
-  const total = quick ? 60 : meta.mins * 60;
+  const total = tutorial ? Infinity : quick ? 60 : meta.mins * 60;
   app().innerHTML = `<div class="play">
+    ${tutorial ? `<div class="coach" id="coach" aria-live="polite">
+      <div class="coach-top"><span class="chip acc">Tutorial · untimed · not scored</span><span class="sp"></span><span class="small muted" id="cgoal">${meta.scored ? `0 / ${TUTORIAL_GOAL} correct` : 'No right answers here'}</span></div>
+      <p class="coach-step"><b id="cnum">Step 1 of ${meta.how.length}</b> <span id="ctext">${meta.how[0]}</span></p>
+      <p class="coach-why" id="why" hidden></p>
+      <div class="row"><button class="btn ghost sm" id="cprev">Back</button><button class="btn ghost sm" id="cnext">Next tip</button><span class="sp"></span><a class="btn sm" id="creal" href="#play-${meta.id}">Start the real game</a></div></div>` : ''}
     <div class="playbar"><button class="btn ghost sm" id="quit">Quit</button><h1 class="playname">${esc(meta.name)}</h1>
       <span class="chip acc" id="lv"></span>${label ? `<span class="chip">${esc(label)}</span>` : ''}<span class="sp"></span>
-      <span class="scorebox"><span class="mono small muted" id="sc"></span><span class="delta" id="dl" aria-hidden="true"></span></span><span class="timer" id="tm" aria-label="Time left">${fmtTime(total)}</span>
+      <span class="scorebox"><span class="mono small muted" id="sc"></span><span class="delta" id="dl" aria-hidden="true"></span></span><span class="timer" id="tm" aria-label="Time left">${tutorial ? 'Untimed' : fmtTime(total)}</span>
       <button class="iconbtn" id="snd" aria-pressed="${Sfx.on}" aria-label="Sound">${SPEAKER(Sfx.on)}</button></div>
-    <div class="timebar"><i id="tb"></i></div>
+    <div class="timebar"${tutorial ? ' hidden' : ''}><i id="tb"></i></div>
     <div class="stagewrap"><div class="fb" id="fb" role="status" aria-live="polite"></div><div class="stage" id="stage"></div><p class="hint" id="hint"></p></div></div>`;
   window.scrollTo(0, 0);
   const timers = new Set(), keys = [];
-  let alive = true, fbT = null, t0 = 0, iv = null, game = null, lastLevel = null, lastScore = 0, lastTick = null;
+  let alive = true, fbT = null, t0 = 0, iv = null, game = null, lastLevel = null, lastScore = 0, lastTick = null, step = 0, wins = 0;
   const wrap = $('.stagewrap');
+  const showStep = i => { step = Math.max(0, Math.min(meta.how.length - 1, i)); $('#cnum').textContent = `Step ${step + 1} of ${meta.how.length}`; $('#ctext').textContent = meta.how[step]; $('#cprev').disabled = step === 0; $('#cnext').disabled = step === meta.how.length - 1; };
+  if (tutorial) { $('#cprev').onclick = () => showStep(step - 1); $('#cnext').onclick = () => showStep(step + 1); showStep(0); }
   // restart a CSS animation class on an element
   const anim = (el, cls) => { if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
   const ctx = {
@@ -247,7 +255,18 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
       if (kind === 'ok') { Sfx.play('ok'); anim(wrap, 'hit-ok'); }
       else if (kind === 'bad') { Sfx.play('bad'); anim(wrap, 'hit-bad'); buzz(40); }
       else if (kind === 'slow') { Sfx.play('slow'); anim(wrap, 'hit-slow'); buzz([20, 40, 20]); }
+      if (tutorial && meta.scored) {
+        if (kind === 'ok') {
+          wins++; ctx.explain('');
+          $('#cgoal').textContent = `${Math.min(wins, TUTORIAL_GOAL)} / ${TUTORIAL_GOAL} correct`;
+          if (wins === TUTORIAL_GOAL) { Sfx.play('level'); $('#coach').classList.add('ready'); $('#cgoal').textContent = 'You’re ready. Keep practising or start the real game.'; anim($('#creal'), 'pop'); }
+        }
+      }
     },
+    // tutorial-only coaching line: why an answer was right or wrong. No-op in timed games.
+    explain(text) { if (!tutorial) return; const w = $('#why'); w.hidden = !text; w.textContent = text ? 'Why: ' + text : ''; },
+    tutorial,
+    slow: tutorial ? 1.6 : 1, // multiply on-screen timings by this so the tutorial is easier to follow
     elapsed() { return t0 ? (performance.now() - t0) / 1000 : 0; },
     finish() { end(); },
     get alive() { return alive; },
@@ -264,6 +283,13 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
     if (!alive || !game) return;
     kill(); ACTIVE = null;
     Sfx.play('end');
+    if (tutorial) { // never saved: show a short wrap-up instead of a scored result
+      app().innerHTML = `<div class="result"><div class="score-hero"><div><div class="big">✓</div></div><div><h1 class="h2">${esc(meta.name)} tutorial done</h1>
+        <p class="muted" style="margin-top:6px">Tutorial rounds are not saved. When you’re ready, play the real ${meta.mins}-minute version.</p></div></div>
+        <div class="row"><a class="btn" href="#play-${meta.id}">Start the real game</a><button class="btn ghost" id="again">Tutorial again</button><a class="btn ghost" href="#game-${meta.id}">Back to ${esc(meta.name)}</a></div></div>`;
+      $('#again').onclick = () => startGame(meta, { tutorial: true });
+      focusMain(); return;
+    }
     const r = game.result();
     const att = { game: meta.id, ts: Date.now(), quick, mock, secs: Math.round(Math.min(total, ctx.elapsed())),
       score: meta.scored ? (r.score ?? 0) : null, accuracy: r.accuracy ?? null, stats: r.stats || [], profile: r.profile || null };
@@ -281,7 +307,7 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
     if (!alive) return;
     t0 = performance.now();
     Sfx.play('go');
-    iv = setInterval(() => {
+    if (!tutorial) iv = setInterval(() => {
       const left = total - ctx.elapsed();
       const tm = $('#tm'); if (!tm) return;
       tm.textContent = fmtTime(left); tm.classList.toggle('low', left <= 15);
@@ -387,7 +413,7 @@ function viewHome() {
 
   <section><p class="eyebrow">Reference</p><h2>All 13 games side by side</h2>
     <div class="tablewrap" style="margin-top:16px"><table><thead><tr><th>Game</th><th>Category</th><th>Time</th><th>What it tests</th><th>Go</th></tr></thead><tbody>
-    ${META.map(m => `<tr><td><b>${m.name}</b></td><td><span class="chip ${catClass(m.cat)}"><span class="catdot"></span>${m.cat}</span></td><td class="mono">${m.mins} min</td><td>${m.measures}</td><td class="act"><a href="#play-${m.id}">Play</a><a href="#game-${m.id}">Rules</a></td></tr>`).join('')}
+    ${META.map(m => `<tr><td><b>${m.name}</b></td><td><span class="chip ${catClass(m.cat)}"><span class="catdot"></span>${m.cat}</span></td><td class="mono">${m.mins} min</td><td>${m.measures}</td><td class="act"><a href="#learn-${m.id}">Learn</a><a href="#play-${m.id}">Play</a><a href="#game-${m.id}">Rules</a></td></tr>`).join('')}
     </tbody></table></div></section>
 
   <section><p class="eyebrow">Getting ready</p><h2>Three things worth rehearsing</h2>
@@ -438,7 +464,10 @@ function viewGame(id) {
     <span class="chip"><span class="catdot"></span>${m.cat}</span>
     <h1 style="margin-top:10px">${m.name}</h1>
     <p class="lede" style="margin-top:12px">${m.desc}</p>
-    <div class="row" style="margin-top:20px"><a class="btn" href="#play-${id}">Play ${m.name} (${m.mins} min)</a><a class="btn ghost" href="#warmup-${id}">1-minute warm-up</a></div>
+    <div class="row" style="margin-top:20px">${Store.forGame(id, false).length
+      ? `<a class="btn" href="#play-${id}">Play ${m.name} (${m.mins} min)</a><a class="btn ghost" href="#learn-${id}">Tutorial</a>`
+      : `<a class="btn" href="#learn-${id}">Start with the tutorial</a><a class="btn ghost" href="#play-${id}">Play the real game (${m.mins} min)</a>`}<a class="btn ghost" href="#warmup-${id}">1-minute warm-up</a></div>
+    <p class="small muted" style="margin-top:8px">The tutorial is untimed, slower, explains your mistakes and isn’t scored.</p>
     <div class="row small muted" style="margin-top:14px"><span class="chip">${m.scored ? 'Adaptive levels' : 'Profile, no right answers'}</span>${b != null ? `<span class="chip acc">Your best: ${b}</span>` : ''}</div>
   </div>
   <div class="panel"><h2 class="h3">How to play</h2><ol class="steps" style="margin-top:12px">${m.how.map(s => `<li><span>${s}</span></li>`).join('')}</ol></div></div>
@@ -703,7 +732,7 @@ function route() {
   document.title = (h !== 'interview' || SHOW_INTERVIEW) && TITLES[h] || 'Assessment Gym';
   let m;
   if ((m = h.match(/^game-(\w+)$/))) { viewGame(m[1]); window.scrollTo(0, 0); focusMain(); }
-  else if ((m = h.match(/^(play|warmup)-(\w+)$/)) && META_BY[m[2]]) { document.title = `${META_BY[m[2]].name} · Assessment Gym`; startGame(META_BY[m[2]], { quick: m[1] === 'warmup' }); }
+  else if ((m = h.match(/^(play|warmup|learn)-(\w+)$/)) && META_BY[m[2]]) { document.title = `${META_BY[m[2]].name}${m[1] === 'learn' ? ' tutorial' : ''} · Assessment Gym`; startGame(META_BY[m[2]], { quick: m[1] === 'warmup', tutorial: m[1] === 'learn' }); }
   else if (h === 'mock') { viewMock(); focusMain(); }
   else if (h === 'progress') { viewProgress(); focusMain(); }
   else if (h === 'interview' && SHOW_INTERVIEW) { viewInterview(); focusMain(); }

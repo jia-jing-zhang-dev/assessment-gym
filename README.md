@@ -15,6 +15,7 @@ Practice simulations of the 13 game formats used in HireVue-style game-based ass
 - **7-day prep plan:** a checklist that saves your ticks.
 - **Teamchat review:** every reply is rated, and the end review shows the strongest reply for each situation.
 - **Progress page:** how your score changes from attempt to attempt, plus copy, restore and reset for your data.
+- **Tutorial rounds:** every game has an untimed, slower tutorial (`#learn-<game>`) with step-by-step tips, a short explanation after each mistake, and a "You're ready" prompt after 5 correct answers. Tutorials are never saved. New players are pointed to the tutorial first.
 - **Game feel:** synthesised sound effects with a mute button, flashes and a shake on right and wrong answers, level-up and score pop-ups, ticks in the last 10 seconds, a count-up score and confetti for a personal best, and swipe controls for Flashback. Animations follow the reduced-motion setting.
 - **Works offline** once loaded (service worker on GitHub Pages), on phones and on desktops.
 

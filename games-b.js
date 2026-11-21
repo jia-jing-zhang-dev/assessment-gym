@@ -120,6 +120,14 @@ IMPL.portraitxt = ctx => {
 
 /* ---------- E-Motions ---------- */
 const EMO = ['Happy', 'Sad', 'Angry', 'Surprised', 'Afraid', 'Disgusted'];
+const CUES = {
+  Happy: 'mouth corners turned up, cheeks lifted, eyes slightly narrowed.',
+  Sad: 'inner ends of the brows raised, mouth corners turned down.',
+  Angry: 'brows pulled down into a V, eyes narrowed, mouth pressed tight.',
+  Surprised: 'brows raised high, eyes wide open, mouth dropped open in an O.',
+  Afraid: 'brows raised and pulled together, eyes wide, mouth stretched sideways.',
+  Disgusted: 'nose wrinkled, upper lip raised, brows lowered.',
+};
 function faceSVG(em, k, skin, hair) {
   const P = { Happy: { m: 1, eo: -0.25, cheek: 1 }, Sad: { m: -0.8, bi: 1, eo: -0.3 }, Angry: { bi: -1.1, bh: -0.3, m: -0.2, eo: -0.35, tight: 1 },
     Surprised: { bh: 1, eo: 0.75, open: 1 }, Afraid: { bh: 0.6, bi: 0.9, eo: 0.65, open: 0.45, wide: 1 }, Disgusted: { bi: -0.5, bh: -0.3, nose: 1, m: -0.5, eo: -0.3, lip: 1 },
@@ -158,8 +166,9 @@ IMPL.emotions = ctx => {
   function choose(b) {
     if (lock) return; lock = true; rts.push(performance.now() - t0);
     if (b.dataset.o === answer) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Correct'); if (++streak >= 3) { lv++; streak = 0; } }
-    else { bad++; streak = 0; b.classList.add('wrong'); $(`.opts button[data-o="${answer}"]`, ctx.stage).classList.add('right'); confus[answer] = (confus[answer] || 0) + 1; ctx.flash('bad', 'It was ' + answer.toLowerCase()); lv = Math.max(1, lv - 1); }
-    ctx.score(pts); ctx.after(900, show);
+    else { bad++; streak = 0; b.classList.add('wrong'); $(`.opts button[data-o="${answer}"]`, ctx.stage).classList.add('right'); confus[answer] = (confus[answer] || 0) + 1; ctx.flash('bad', 'It was ' + answer.toLowerCase()); lv = Math.max(1, lv - 1);
+      ctx.explain(`${answer}: ${CUES[answer]}`); }
+    ctx.score(pts); ctx.after(ctx.tutorial && b.dataset.o !== answer ? 2400 : 900, show);
   }
   ctx.key(e => { if (/^[1-6]$/.test(e.key)) $$('.opts button', ctx.stage)[+e.key - 1]?.click(); });
   ctx.hint('Keyboard: 1–6');
@@ -257,7 +266,12 @@ IMPL.teamchat = ctx => {
           const o = opts[+b.dataset.n], top = s.opts.find(x => x[1] === 2);
           tally[o[0]]++; pts += o[1] * 5; rts.push(performance.now() - t0);
           log.push({ prompt: s.msgs[s.msgs.length - 1], mine: o[2], best: top[2], q: o[1], why: s.why });
-          ctx.score(pts); add('me', esc(o[2])); rp.innerHTML = ''; i++; ctx.after(700, scene);
+          ctx.score(pts); add('me', esc(o[2])); rp.innerHTML = ''; i++;
+          if (ctx.tutorial) { // the real game only reveals ratings in the end review
+            if (o[1] === 2) ctx.flash('ok', 'Strongest reply'); else ctx.flash(o[1] === 1 ? 'slow' : 'bad', o[1] === 1 ? 'Okay reply' : 'Weak reply');
+            ctx.explain(o[1] === 2 ? '' : `Stronger: “${top[2]}” ${s.why}`);
+          }
+          ctx.after(ctx.tutorial && o[1] < 2 ? 2600 : 700, scene);
         });
         return;
       }
