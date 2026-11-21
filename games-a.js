@@ -123,7 +123,7 @@ IMPL.numerosity = ctx => {
 IMPL.pathfinder = ctx => {
   const D = [[-1, 0, 1], [0, 1, 2], [1, 0, 4], [0, -1, 8]], OPP = { 1: 4, 2: 8, 4: 1, 8: 2 };
   const TYPES = [3, 5, 6, 9, 10, 12];
-  let lv = 1, pts = 0, solved = 0, skips = 0, N, sr, er, cells, tray, sel = null, path, t0;
+  let lv = 1, maxLv = 1, pts = 0, solved = 0, skips = 0, N, sr, er, cells, tray, sel = null, path, t0;
   const times = [];
   const tileSVG = m => `<svg viewBox="0 0 100 100" aria-hidden="true">${m & 1 ? '<path class="pipe" d="M50 50V0"/>' : ''}${m & 2 ? '<path class="pipe" d="M50 50H100"/>' : ''}${m & 4 ? '<path class="pipe" d="M50 50V100"/>' : ''}${m & 8 ? '<path class="pipe" d="M50 50H0"/>' : ''}<circle class="pipe-c" cx="50" cy="50" r="11"/></svg>`;
   function genPath() {
@@ -183,14 +183,14 @@ IMPL.pathfinder = ctx => {
       cells[i] = { m: tray[sel] }; tray.splice(sel, 1); sel = null;
       if (connected()) {
         solved++; pts += path.length + lv; times.push(performance.now() - t0); ctx.score(pts); ctx.flash('ok', 'Path connected');
-        draw(true); lv++; ctx.after(900, puzzle);
+        draw(true); lv++; maxLv = Math.max(maxLv, lv); ctx.after(900, puzzle);
       } else draw();
     });
     $('#pskip').onclick = () => { skips++; lv = Math.max(1, lv - 1); puzzle(); };
   }
   ctx.hint('Tap a tray tile, then an empty cell. Tap a placed tile to return it.');
   ctx.score(0); puzzle();
-  return { result() { return { score: pts, accuracy: null, stats: [['Paths solved', solved], ['Highest level', lv], ['Skipped', skips], ['Median solve time', times.length ? (median(times) / 1000).toFixed(1) + ' s' : '–']] }; } };
+  return { result() { return { score: pts, accuracy: null, stats: [['Paths solved', solved], ['Highest level', maxLv], ['Skipped', skips], ['Median solve time', times.length ? (median(times) / 1000).toFixed(1) + ' s' : '–']] }; } };
 };
 
 /* ---------- Digitspan ---------- */
