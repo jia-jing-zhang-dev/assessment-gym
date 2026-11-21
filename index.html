@@ -299,6 +299,36 @@ h1[tabindex="-1"]:focus{outline:none}
 label{display:grid;gap:4px;font-weight:500}
 label.chk{display:flex;font-weight:400}
 
+/* game feel: feedback animations */
+.iconbtn{display:grid;place-items:center;width:34px;height:34px;border-radius:9px;border:1px solid var(--line);background:transparent;color:var(--muted);cursor:pointer}
+.iconbtn:hover{color:var(--ink);background:var(--sunk)}
+.iconbtn[aria-pressed="false"]{color:var(--bad)}
+.scorebox{position:relative;display:inline-block}
+.delta{position:absolute;right:0;top:-2px;font:700 .85rem var(--f-mono);opacity:0;pointer-events:none}
+.delta.up{color:var(--ok)}.delta.down{color:var(--bad)}
+.delta.float{animation:float .8s ease-out}
+@keyframes float{0%{opacity:1;transform:translateY(0)}100%{opacity:0;transform:translateY(-22px)}}
+.stagewrap.hit-ok{animation:glow-ok .45s ease-out}
+.stagewrap.hit-bad{animation:glow-bad .45s ease-out,shake .32s ease-in-out}
+.stagewrap.hit-slow{animation:glow-slow .5s ease-out}
+.stagewrap.hit-level{animation:glow-level .8s ease-out}
+@keyframes glow-ok{0%{box-shadow:inset 0 0 0 3px var(--ok)}100%{box-shadow:inset 0 0 0 0 transparent}}
+@keyframes glow-bad{0%{box-shadow:inset 0 0 0 3px var(--bad)}100%{box-shadow:inset 0 0 0 0 transparent}}
+@keyframes glow-slow{0%{box-shadow:inset 0 0 0 3px var(--slow)}100%{box-shadow:inset 0 0 0 0 transparent}}
+@keyframes glow-level{0%{box-shadow:inset 0 0 0 4px var(--signal),inset 0 0 40px color-mix(in srgb,var(--signal) 35%,transparent)}100%{box-shadow:inset 0 0 0 0 transparent}}
+@keyframes shake{0%,100%{transform:translateX(0)}20%{transform:translateX(-6px)}40%{transform:translateX(5px)}60%{transform:translateX(-3px)}80%{transform:translateX(2px)}}
+.pop{animation:pop .35s cubic-bezier(.3,1.6,.5,1)}
+@keyframes pop{0%{transform:scale(1)}40%{transform:scale(1.25)}100%{transform:scale(1)}}
+.timer.pulse{animation:tpulse .5s ease-out}
+@keyframes tpulse{0%{transform:scale(1.25)}100%{transform:scale(1)}}
+.timebar i.low{background:var(--bad)}
+.stim-card{touch-action:pan-y;user-select:none}
+.stim-card.swiped{animation:swipe .25s ease-out}
+@keyframes swipe{0%{transform:translateX(var(--swipe))}100%{transform:translateX(0)}}
+.tile,.sgrid button,.opts button,.pair button,.likert button,.replies button,.tray button,.disc button{transition:transform .08s,background .12s,border-color .12s}
+.tile:active,.sgrid button:active,.opts button:active,.pair button:active,.likert button:active,.replies button:active,.tray button:active,.disc button:active{transform:scale(.95)}
+.confetti{position:fixed;inset:0;pointer-events:none;z-index:50}
+
 @media (max-width:820px){
   .hero,.detail-hero,.grid2{grid-template-columns:1fr}
   .grid3{grid-template-columns:1fr}

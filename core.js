@@ -160,6 +160,43 @@ const Store = {
   forGame(id, full = true) { return this.data.attempts.filter(a => a.game === id && (!full || !a.quick)).sort((x, y) => x.ts - y.ts); },
 };
 
+/* ---------- sound (synthesised, no audio files) ---------- */
+const Sfx = {
+  on: (() => { try { return localStorage.getItem('agym.sound') !== 'off'; } catch (e) { return true; } })(),
+  ac: null,
+  toggle() { this.on = !this.on; try { localStorage.setItem('agym.sound', this.on ? 'on' : 'off'); } catch (e) {} return this.on; },
+  tone(f, t0, dur, type = 'sine', vol = 0.12) {
+    const ac = this.ac, o = ac.createOscillator(), g = ac.createGain();
+    o.type = type; o.frequency.value = f; o.connect(g); g.connect(ac.destination);
+    const s = ac.currentTime + t0;
+    g.gain.setValueAtTime(0.0001, s); g.gain.exponentialRampToValueAtTime(vol, s + 0.01); g.gain.exponentialRampToValueAtTime(0.0001, s + dur);
+    o.start(s); o.stop(s + dur + 0.02);
+  },
+  play(kind) {
+    if (!this.on) return;
+    try {
+      if (!this.ac) this.ac = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ac.state === 'suspended') this.ac.resume();
+      const T = this.tone.bind(this);
+      ({
+        ok: () => { T(660, 0, 0.09); T(880, 0.07, 0.12); },
+        bad: () => { T(196, 0, 0.18, 'square', 0.06); },
+        slow: () => { T(330, 0, 0.12, 'triangle'); T(262, 0.1, 0.16, 'triangle'); },
+        level: () => { T(523, 0, 0.1); T(659, 0.08, 0.1); T(784, 0.16, 0.18); },
+        down: () => { T(392, 0, 0.12, 'triangle'); T(294, 0.1, 0.18, 'triangle'); },
+        tick: () => { T(1200, 0, 0.04, 'sine', 0.05); },
+        go: () => { T(880, 0, 0.18); },
+        count: () => { T(440, 0, 0.1, 'sine', 0.08); },
+        end: () => { T(784, 0, 0.12); T(659, 0.1, 0.12); T(523, 0.2, 0.25); },
+        best: () => { [523, 659, 784, 1047].forEach((f, i) => T(f, i * 0.09, 0.16)); },
+      }[kind] || (() => {}))();
+    } catch (e) {}
+  },
+};
+const SPEAKER = on => `<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 9h4l5-4v14l-5-4H4z" fill="currentColor"/>${on ? '<path d="M16 9a4 4 0 0 1 0 6M18.5 6.5a8 8 0 0 1 0 11"/>' : '<path d="M17 9l5 6M22 9l-5 6"/>'}</svg>`;
+const buzz = ms => { try { navigator.vibrate && navigator.vibrate(ms); } catch (e) {} };
+const levelNum = t => { const m = String(t).match(/\d+/); return m ? +m[0] : null; };
+
 /* ---------- game engine ---------- */
 let ACTIVE = null;
 function stopActive() { if (ACTIVE) { ACTIVE.kill(); ACTIVE = null; } }
@@ -170,21 +207,47 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
   app().innerHTML = `<div class="play">
     <div class="playbar"><button class="btn ghost sm" id="quit">Quit</button><h1 class="playname">${esc(meta.name)}</h1>
       <span class="chip acc" id="lv"></span>${label ? `<span class="chip">${esc(label)}</span>` : ''}<span class="sp"></span>
-      <span class="mono small muted" id="sc"></span><span class="timer" id="tm" aria-label="Time left">${fmtTime(total)}</span></div>
+      <span class="scorebox"><span class="mono small muted" id="sc"></span><span class="delta" id="dl" aria-hidden="true"></span></span><span class="timer" id="tm" aria-label="Time left">${fmtTime(total)}</span>
+      <button class="iconbtn" id="snd" aria-pressed="${Sfx.on}" aria-label="Sound">${SPEAKER(Sfx.on)}</button></div>
     <div class="timebar"><i id="tb"></i></div>
     <div class="stagewrap"><div class="fb" id="fb" role="status" aria-live="polite"></div><div class="stage" id="stage"></div><p class="hint" id="hint"></p></div></div>`;
   window.scrollTo(0, 0);
   const timers = new Set(), keys = [];
-  let alive = true, fbT = null, t0 = 0, iv = null, game = null;
+  let alive = true, fbT = null, t0 = 0, iv = null, game = null, lastLevel = null, lastScore = 0, lastTick = null;
+  const wrap = $('.stagewrap');
+  // restart a CSS animation class on an element
+  const anim = (el, cls) => { if (!el) return; el.classList.remove(cls); void el.offsetWidth; el.classList.add(cls); };
   const ctx = {
     stage: $('#stage'),
     after(ms, fn) { const id = setTimeout(() => { timers.delete(id); if (alive) fn(); }, ms); timers.add(id); return id; },
     key(fn) { keys.push(fn); },
-    level(t) { $('#lv').textContent = t; },
+    // dir: 'up' | 'down' when the game knows; otherwise inferred from the first number in the label
+    level(t, dir) {
+      const el = $('#lv'); if (el.textContent === t) return;
+      const a = levelNum(lastLevel), b = levelNum(t);
+      if (!dir && a != null && b != null) dir = b > a ? 'up' : b < a ? 'down' : null;
+      el.textContent = t;
+      if (lastLevel != null) {
+        anim(el, 'pop');
+        if (dir === 'up') { Sfx.play('level'); anim(wrap, 'hit-level'); }
+        else if (dir === 'down') Sfx.play('down');
+        // 'quiet': label changes without a sound (used by Pulse, whose pace shifts constantly)
+      }
+      lastLevel = t;
+    },
     hint(t) { $('#hint').textContent = t; },
-    score(n) { $('#sc').textContent = 'Score ' + n; },
+    score(n) {
+      $('#sc').textContent = 'Score ' + n;
+      const d = n - lastScore; lastScore = n;
+      if (d) { const dl = $('#dl'); dl.textContent = (d > 0 ? '+' : '') + d; dl.className = 'delta ' + (d > 0 ? 'up' : 'down'); anim(dl, 'float'); }
+    },
     progress(t) { $('#sc').textContent = t; },
-    flash(kind, text, dur = 650) { const f = $('#fb'); f.className = 'fb show ' + kind; f.textContent = text; clearTimeout(fbT); fbT = setTimeout(() => f.classList.remove('show'), dur); },
+    flash(kind, text, dur = 650) {
+      const f = $('#fb'); f.className = 'fb show ' + kind; f.textContent = text; clearTimeout(fbT); fbT = setTimeout(() => f.classList.remove('show'), dur);
+      if (kind === 'ok') { Sfx.play('ok'); anim(wrap, 'hit-ok'); }
+      else if (kind === 'bad') { Sfx.play('bad'); anim(wrap, 'hit-bad'); buzz(40); }
+      else if (kind === 'slow') { Sfx.play('slow'); anim(wrap, 'hit-slow'); buzz([20, 40, 20]); }
+    },
     elapsed() { return t0 ? (performance.now() - t0) / 1000 : 0; },
     finish() { end(); },
     get alive() { return alive; },
@@ -200,6 +263,7 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
   function end() {
     if (!alive || !game) return;
     kill(); ACTIVE = null;
+    Sfx.play('end');
     const r = game.result();
     const att = { game: meta.id, ts: Date.now(), quick, mock, secs: Math.round(Math.min(total, ctx.elapsed())),
       score: meta.scored ? (r.score ?? 0) : null, accuracy: r.accuracy ?? null, stats: r.stats || [], profile: r.profile || null };
@@ -208,6 +272,7 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
   }
   ACTIVE = { kill };
   $('#quit').onclick = () => { stopActive(); location.hash = mock ? '#mock' : '#game-' + meta.id; route(); };
+  $('#snd').onclick = e => { const on = Sfx.toggle(); const b = e.currentTarget; b.innerHTML = SPEAKER(on); b.setAttribute('aria-pressed', on); if (on) Sfx.play('ok'); };
   // 3-2-1 countdown so the clock never starts while you are still reading
   const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
   let n = 3;
@@ -215,17 +280,23 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
   const go = () => {
     if (!alive) return;
     t0 = performance.now();
+    Sfx.play('go');
     iv = setInterval(() => {
       const left = total - ctx.elapsed();
       const tm = $('#tm'); if (!tm) return;
       tm.textContent = fmtTime(left); tm.classList.toggle('low', left <= 15);
       $('#tb').style.width = Math.max(0, left / total * 100) + '%';
+      $('#tb').classList.toggle('low', left <= 15);
+      // last 10 seconds: one soft tick per second and a pulsing timer
+      const s = Math.ceil(left);
+      if (left > 0 && s <= 10 && s !== lastTick) { lastTick = s; Sfx.play('tick'); anim(tm, 'pulse'); }
       if (left <= 0) end();
     }, 200);
     ctx.stage.innerHTML = '';
     game = IMPL[meta.id](ctx);
   };
-  const tick = () => { if (--n <= 0) return go(); const c = $('#cdn'); if (c) c.textContent = n; ctx.after(reduce ? 500 : 800, tick); };
+  Sfx.play('count');
+  const tick = () => { if (--n <= 0) return go(); const c = $('#cdn'); if (c) { c.textContent = n; anim(c, 'pop'); } Sfx.play('count'); ctx.after(reduce ? 500 : 800, tick); };
   ctx.after(reduce ? 500 : 800, tick);
 }
 
@@ -413,6 +484,34 @@ function showResult(meta, att, r) {
     <div class="row"><button class="btn" id="again">Play again</button><a class="btn ghost" href="#game-${meta.id}">Back to ${meta.name}</a><a class="btn ghost" href="#home">All games</a></div></div>`;
   $('#again').onclick = () => startGame(meta, { quick: att.quick });
   window.scrollTo(0, 0); focusMain();
+  celebrate(meta, att);
+}
+function celebrate(meta, att) {
+  if (!meta.scored) return;
+  const reduce = window.matchMedia && matchMedia('(prefers-reduced-motion: reduce)').matches;
+  const big = $('.score-hero .big');
+  if (big && !reduce && att.score > 0) { // count the score up over ~0.8 s
+    const t0 = performance.now(), target = att.score;
+    const step = now => { const p = Math.min(1, (now - t0) / 800); big.textContent = Math.round(target * (1 - Math.pow(1 - p, 3))); if (p < 1) requestAnimationFrame(step); };
+    big.textContent = '0'; requestAnimationFrame(step);
+  }
+  const prev = Store.forGame(meta.id).filter(x => x.ts < att.ts && x.score != null);
+  const best = !att.quick && prev.length && att.score > Math.max(...prev.map(x => x.score));
+  if (!best) return;
+  Sfx.play('best');
+  if (reduce) return;
+  const cv = document.createElement('canvas'); cv.className = 'confetti'; cv.setAttribute('aria-hidden', 'true');
+  document.body.appendChild(cv);
+  const W = cv.width = innerWidth, H = cv.height = innerHeight, g = cv.getContext('2d');
+  const cols = ['#0b7a61', '#3fc9a4', '#e39a12', '#3e7bfa', '#e5484d', '#8e5bd8'];
+  const bits = Array.from({ length: 120 }, () => ({ x: W / 2 + (Math.random() - 0.5) * 120, y: H * 0.35, vx: (Math.random() - 0.5) * 11, vy: -6 - Math.random() * 8, r: Math.random() * 6.3, s: 5 + Math.random() * 5, c: pick(cols) }));
+  const t0 = performance.now();
+  const frame = now => {
+    const t = now - t0; g.clearRect(0, 0, W, H);
+    bits.forEach(b => { b.vy += 0.3; b.x += b.vx; b.y += b.vy; b.r += 0.2; g.save(); g.translate(b.x, b.y); g.rotate(b.r); g.fillStyle = b.c; g.globalAlpha = Math.max(0, 1 - t / 1800); g.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); g.restore(); });
+    if (t < 1800) requestAnimationFrame(frame); else cv.remove();
+  };
+  requestAnimationFrame(frame);
 }
 
 /* ---------- mock assessment ---------- */

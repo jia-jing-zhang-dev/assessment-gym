@@ -9,7 +9,7 @@ IMPL.flashback = ctx => {
   const st = { hit: 0, cr: 0, miss: 0, fa: 0, slow: 0 }, rts = [];
   ctx.stage.innerHTML = `<p class="prompt" id="fq">Get ready</p><div class="stim-card blank" id="fc"></div>
     <div class="btnrow"><button class="btn yes" id="fy">Match <kbd>←</kbd></button><button class="btn no" id="fn">No match <kbd>→</kbd></button></div>`;
-  ctx.hint('Keyboard: ← Match · → No match');
+  ctx.hint('Keyboard: ← Match · → No match. On touch screens, swipe the card left or right.');
   const q = $('#fq'), card = $('#fc'), by = $('#fy'), bn = $('#fn');
   const L = () => LV[li];
   const label = () => `${L().n}-back · ${L().c ? 'shape + colour' : 'shape only'}`;
@@ -21,7 +21,7 @@ IMPL.flashback = ctx => {
     let it; do it = { s: pick(SH), c: l.c ? pick(CO) : 'var(--ink)' }; while (back && same(it, back));
     return it;
   }
-  function setLevel() { ctx.level(label()); seq = []; bOk = 0; bN = 0; }
+  function setLevel(dir) { ctx.level(label(), dir); seq = []; bOk = 0; bN = 0; }
   function inter(title) {
     by.disabled = bn.disabled = true; q.textContent = 'New rule';
     card.classList.remove('blank'); card.innerHTML = `<div class="inter"><b>${title}</b><span>${label()}</span></div>`;
@@ -39,8 +39,8 @@ IMPL.flashback = ctx => {
         if (!answered) { answered = true; st.slow++; bN++; ctx.flash('slow', 'Too slow'); }
         if (bN >= 10) {
           const acc = bOk / bN;
-          if (acc >= 0.8 && li < LV.length - 1) { li++; maxLi = Math.max(maxLi, li); setLevel(); return inter('Level up'); }
-          if (acc < 0.5 && li > 0) { li--; setLevel(); return inter('Level down'); }
+          if (acc >= 0.8 && li < LV.length - 1) { li++; maxLi = Math.max(maxLi, li); setLevel('up'); return inter('Level up'); }
+          if (acc < 0.5 && li > 0) { li--; setLevel('down'); return inter('Level down'); }
           bOk = 0; bN = 0;
         }
         next();
@@ -56,6 +56,16 @@ IMPL.flashback = ctx => {
     ctx.score(pts);
   }
   by.onclick = () => answer(true); bn.onclick = () => answer(false);
+  // touch: swipe the card left for Match, right for No match (same sides as the arrow keys)
+  let sx = null;
+  card.addEventListener('pointerdown', e => { sx = e.clientX; });
+  card.addEventListener('pointerup', e => {
+    if (sx == null) return; const dx = e.clientX - sx; sx = null;
+    if (Math.abs(dx) < 40) return;
+    card.style.setProperty('--swipe', dx < 0 ? '-24px' : '24px'); card.classList.remove('swiped'); void card.offsetWidth; card.classList.add('swiped');
+    answer(dx < 0);
+  });
+  card.addEventListener('pointercancel', () => { sx = null; });
   ctx.key(e => { if (e.key === 'ArrowLeft') answer(true); else if (e.key === 'ArrowRight') answer(false); });
   setLevel(); ctx.score(0); ctx.after(900, next);
   return { result() {
@@ -466,7 +476,7 @@ IMPL.pulse = ctx => {
   const nudge = d => { sp = Math.min(8, Math.max(1, sp + d)); topSp = Math.max(topSp, sp); };
   const lvl = () => Math.floor(sp);
   function spawn() {
-    const l = lvl(); ctx.level('Speed ' + l);
+    const l = lvl(); ctx.level('Speed ' + l, 'quiet');
     const r = Math.random(), red = r < 0.3, lure = !red && l >= 2 && r < 0.45;
     const color = red ? RED : lure ? LURE : pick(OTHER);
     cur = { red, lure, t: performance.now(), done: false }; shown++;
