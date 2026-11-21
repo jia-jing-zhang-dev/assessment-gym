@@ -13,12 +13,15 @@ Practice simulations of the 13 game formats used in HireVue-style game-based ass
 - **Game pages** with how-to-play steps, skills assessed, a strategy guide, an FAQ and your attempt history.
 - **Mock assessment:** five random games played back to back.
 - **7-day prep plan:** a checklist that saves your ticks.
-- **Video interview drill:** single questions or a full 5-question interview, with prep and answer timers, a retake limit and a STAR self-review. Optional webcam recording plays back on your device and is never uploaded.
 - **Teamchat review:** every reply is rated, and the end review shows the strongest reply for each situation.
 - **Progress page:** how your score changes from attempt to attempt, plus copy, restore and reset for your data.
 - **Works offline** once loaded (service worker on GitHub Pages), on phones and on desktops.
 
 Results are stored only in your browser's `localStorage`.
+
+## Planned
+
+- **Video interview drill:** built but hidden for now (`SHOW_INTERVIEW` in `core.js`). It has single or 5-question interviews, timers, retakes, a STAR self-review and optional local webcam recording.
 
 ## Run locally
 

@@ -452,7 +452,7 @@ const PLAN = [
   ['Day 3 · Memory games', ['Two full rounds of Flashback', 'Two full rounds of Digitspan using chunking', 'One round of Disconumbers keeping a running total']],
   ['Day 4 · Visual games', ['Two rounds each of Shapedance and Singularity', 'One round of Pathfinder working from both ends', 'One round of Puzzle, memorising corners first']],
   ['Day 5 · Numbers and speed', ['Two rounds of Numerosity, factoring targets first', 'Two rounds of Pulse', 'Replay your weakest game']],
-  ['Day 6 · Personality and interview', ['Do Portrait and PortraitXT once, honestly', 'Play Teamchat and read the reply review', 'Practise three video interview questions']],
+  ['Day 6 · Personality and judgement', ['Do Portrait and PortraitXT once, honestly', 'Play Teamchat and read the reply review', 'Play E-Motions and Pulse once each']],
   ['Day 7 · Dress rehearsal', ['Run a full mock assessment in one sitting', 'Check your progress chart against Day 2', 'Plan the real day: quiet room, laptop, notifications off']],
 ];
 function viewPlan() {
@@ -499,7 +499,9 @@ function viewProgress() {
   };
 }
 
-/* ---------- video interview practice ---------- */
+/* ---------- video interview practice ----------
+   Hidden for now: the games come first. Set to true to bring back the nav link, the #interview page and the plan task. */
+const SHOW_INTERVIEW = false;
 const IQ = {
   'About you': ['Tell me about yourself and why you applied for this role.', 'What would your last manager or teacher say is your greatest strength?', 'Describe a weakness you are actively working on.', 'Where do you want to be in three years?'],
   'Teamwork': ['Tell me about a time you disagreed with a teammate. What did you do?', 'Describe a group project where someone was not pulling their weight.', 'Give an example of when you helped a colleague who was struggling.', 'Tell me about a time you had to work with someone very different from you.'],
@@ -599,17 +601,18 @@ function route() {
   stopActive(); stopCam();
   const h = location.hash.slice(1) || 'home';
   $$('#nav a').forEach(a => { const on = a.dataset.n === h || (a.dataset.n === 'home' && /^(home|games|game-)/.test(h)); a.classList.toggle('on', on); on ? a.setAttribute('aria-current', 'page') : a.removeAttribute('aria-current'); });
-  document.title = TITLES[h] || 'Assessment Gym';
+  document.title = (h !== 'interview' || SHOW_INTERVIEW) && TITLES[h] || 'Assessment Gym';
   let m;
   if ((m = h.match(/^game-(\w+)$/))) { viewGame(m[1]); window.scrollTo(0, 0); focusMain(); }
   else if ((m = h.match(/^(play|warmup)-(\w+)$/)) && META_BY[m[2]]) { document.title = `${META_BY[m[2]].name} · Assessment Gym`; startGame(META_BY[m[2]], { quick: m[1] === 'warmup' }); }
   else if (h === 'mock') { viewMock(); focusMain(); }
   else if (h === 'progress') { viewProgress(); focusMain(); }
-  else if (h === 'interview') { viewInterview(); focusMain(); }
+  else if (h === 'interview' && SHOW_INTERVIEW) { viewInterview(); focusMain(); }
   else if (h === 'plan') { viewPlan(); focusMain(); }
   else { viewHome(); if (h === 'games') $('#games').scrollIntoView(); else window.scrollTo(0, 0); }
 }
 function boot() {
+  if (!SHOW_INTERVIEW) $$('#nav a[data-n="interview"]').forEach(a => a.remove());
   Store.load(); window.addEventListener('hashchange', route); route();
   // offline support where service workers are allowed (e.g. GitHub Pages); silently skipped elsewhere
   try { if ('serviceWorker' in navigator && /github\.io$|^localhost$/.test(location.hostname)) navigator.serviceWorker.register('sw.js').catch(() => {}); } catch (e) {}
