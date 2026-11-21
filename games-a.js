@@ -73,22 +73,33 @@ IMPL.numerosity = ctx => {
   ctx.stage.innerHTML = `<p class="prompt" id="nq"></p><div class="tiles" id="nt"></div><p class="calc" id="nc"></p>
     <div class="btnrow"><button class="btn ghost" id="nclr">Clear</button><button class="btn ghost" id="nskip">Skip</button></div>`;
   ctx.hint('Tap bubbles to select. Your answer is checked when you reach the required count.');
+  // operator unlocks with level: + first, then −, ×, ÷ (difference and quotient accept either order)
+  const OPS = {
+    sum: { sym: '+', verb: n => `add up to`, val: v => v.reduce((a, b) => a + b, 0) },
+    diff: { sym: '−', verb: () => `have a difference of`, val: v => Math.abs(v[0] - v[1]) },
+    product: { sym: '×', verb: () => `multiply to`, val: v => v.reduce((a, b) => a * b, 1) },
+    quot: { sym: '÷', verb: () => `divide to give`, val: v => Math.max(...v) / Math.min(...v) },
+  };
   function puzzle() {
     const n = Math.min(6 + lv, 12), hi = 9 + lv * 3;
-    if (lv >= 4 && Math.random() < 0.3) { type = 'product'; k = 2; tiles = Array.from({ length: n }, () => 2 + rnd(11)); }
-    else { type = 'sum'; k = lv < 3 ? 2 : lv < 6 ? 3 : 4; tiles = Array.from({ length: n }, () => 1 + rnd(hi)); }
-    const idx = sample([...tiles.keys()], k);
-    target = type === 'sum' ? idx.reduce((s, i) => s + tiles[i], 0) : idx.reduce((s, i) => s * tiles[i], 1);
+    const pool = ['sum', ...(lv >= 2 ? ['diff'] : []), ...(lv >= 4 ? ['product'] : []), ...(lv >= 5 ? ['quot'] : [])];
+    type = pick(pool);
+    k = type === 'sum' ? (lv < 3 ? 2 : lv < 6 ? 3 : 4) : 2;
+    tiles = Array.from({ length: n }, () => type === 'product' || type === 'quot' ? 2 + rnd(11) : 1 + rnd(hi));
+    let idx = sample([...tiles.keys()], k);
+    if (type === 'quot') { const b = tiles[idx[0]]; tiles[idx[1]] = b * (2 + rnd(6)); }
+    if (type === 'diff' && tiles[idx[0]] === tiles[idx[1]]) tiles[idx[1]] += 1 + rnd(5);
+    target = OPS[type].val(idx.map(i => tiles[i]));
     sel = new Set(); lock = false; t0 = performance.now();
-    ctx.level('Level ' + lv);
-    $('#nq').innerHTML = type === 'sum' ? `Select <b>${k}</b> numbers that add up to <b class="mono">${target}</b>` : `Select <b>2</b> numbers that multiply to <b class="mono">${target}</b>`;
+    ctx.level(`Level ${lv} · ${OPS[type].sym}`);
+    $('#nq').innerHTML = `<span class="chip acc" style="margin-right:8px">${OPS[type].sym}</span>Select <b>${k}</b> numbers that ${OPS[type].verb()} <b class="mono">${target}</b>`;
     $('#nt').innerHTML = tiles.map((v, i) => `<button class="tile" data-i="${i}">${v}</button>`).join('');
     $$('#nt .tile').forEach(b => b.onclick = () => toggle(+b.dataset.i, b));
     calc();
   }
   function calc() {
     const v = [...sel].map(i => tiles[i]);
-    $('#nc').textContent = v.length ? v.join(type === 'sum' ? ' + ' : ' × ') + ' = ' + (type === 'sum' ? v.reduce((a, b) => a + b, 0) : v.reduce((a, b) => a * b, 1)) : `${k} to pick`;
+    $('#nc').textContent = v.length ? v.join(` ${OPS[type].sym} `) + (v.length === k ? ' = ' + +OPS[type].val(v).toFixed(2) : '') : `${k} to pick`;
   }
   function toggle(i, b) {
     if (lock) return;
@@ -96,8 +107,7 @@ IMPL.numerosity = ctx => {
     if (sel.size === k) { lock = true; ctx.after(220, check); }
   }
   function check() {
-    const v = [...sel].map(i => tiles[i]);
-    const val = type === 'sum' ? v.reduce((a, b) => a + b, 0) : v.reduce((a, b) => a * b, 1);
+    const val = +OPS[type].val([...sel].map(i => tiles[i])).toFixed(2);
     rts.push(performance.now() - t0);
     if (val === target) { ok++; pts += k * lv; streak++; misses = 0; ctx.flash('ok', 'Correct'); if (streak >= 2) { lv++; maxLv = Math.max(maxLv, lv); streak = 0; } }
     else { bad++; streak = 0; misses++; ctx.flash('bad', `${val} ≠ ${target}`); if (misses >= 2) { lv = Math.max(1, lv - 1); misses = 0; } }
@@ -162,7 +172,7 @@ IMPL.pathfinder = ctx => {
       g += `<div class="mark">${r === er ? '→ OUT' : ''}</div>`;
     }
     ctx.stage.innerHTML = g + `</div><div class="tray">${tray.map((m, i) => `<button data-t="${i}" class="${sel === i ? 'sel' : ''}" aria-label="Tile">${tileSVG(m)}</button>`).join('')}</div>
-      <div class="btnrow"><button class="btn ghost" id="pskip">New puzzle</button></div>`;
+      <div class="btnrow"><button class="btn ghost" id="pskip">Skip (grid gets easier)</button></div>`;
     if (done) return;
     $$('.tray button', ctx.stage).forEach(b => b.onclick = () => { sel = sel === +b.dataset.t ? null : +b.dataset.t; draw(); });
     $$('.pf .cell', ctx.stage).forEach(el => el.onclick = () => {
@@ -176,7 +186,7 @@ IMPL.pathfinder = ctx => {
         draw(true); lv++; ctx.after(900, puzzle);
       } else draw();
     });
-    $('#pskip').onclick = () => { skips++; puzzle(); };
+    $('#pskip').onclick = () => { skips++; lv = Math.max(1, lv - 1); puzzle(); };
   }
   ctx.hint('Tap a tray tile, then an empty cell. Tap a placed tile to return it.');
   ctx.score(0); puzzle();
@@ -186,14 +196,15 @@ IMPL.pathfinder = ctx => {
 /* ---------- Digitspan ---------- */
 IMPL.digitspan = ctx => {
   const LET = 'ACFHKMPT';
-  let len = 3, maxLen = 3, wrongRow = 0, pts = 0, ok = 0, bad = 0, seq = [], input = '', phase = 'show', useLetters = false;
+  let len = 3, maxLen = 3, wrongRow = 0, pts = 0, ok = 0, bad = 0, seq = [], input = '', phase = 'show', useLetters = false, back = false, backOk = 0, backN = 0;
   function round() {
     useLetters = len >= 5;
+    back = len >= 5 && Math.random() < 0.35;
     seq = Array.from({ length: len }, () => useLetters && Math.random() < 0.4 ? pick(LET) : String(rnd(10)));
-    for (let i = 1; i < seq.length; i++) if (seq[i] === seq[i - 1]) seq[i] = String((+seq[i] + 1) % 10);
-    ctx.level(`Span ${len}${useLetters ? ' · digits + letters' : ''}`);
+    for (let i = 1; i < seq.length; i++) if (seq[i] === seq[i - 1]) seq[i] = /\d/.test(seq[i]) ? String((+seq[i] + 1) % 10) : LET[(LET.indexOf(seq[i]) + 1) % LET.length];
+    ctx.level(`Span ${len}${useLetters ? ' · digits + letters' : ''}${back ? ' · backwards' : ''}`);
     phase = 'show'; input = '';
-    ctx.stage.innerHTML = `<p class="prompt">Memorise the sequence</p><div class="bigchar mono" id="dc"></div>`;
+    ctx.stage.innerHTML = `<p class="prompt">${back ? 'Memorise it. You will type this one <b>backwards</b>' : 'Memorise the sequence'}</p><div class="bigchar mono" id="dc"></div>`;
     let i = 0;
     const step = () => {
       if (i >= seq.length) return ctx.after(400, entry);
@@ -205,7 +216,7 @@ IMPL.digitspan = ctx => {
   function entry() {
     phase = 'input';
     const keys = [...'1234567890', ...(useLetters ? LET : '')];
-    ctx.stage.innerHTML = `<p class="prompt">Enter the sequence in order</p><div class="slots" id="ds"></div>
+    ctx.stage.innerHTML = `<p class="prompt">${back ? 'Enter the sequence <b>last to first</b>' : 'Enter the sequence in order'}</p><div class="slots" id="ds"></div>
       <div class="keypad">${keys.map(k => `<button data-k="${k}">${k}</button>`).join('')}<button data-k="del" aria-label="Delete">⌫</button></div>
       <div class="btnrow"><button class="btn" id="dsub">Submit</button></div>`;
     $$('.keypad button', ctx.stage).forEach(b => b.onclick = () => press(b.dataset.k));
@@ -215,8 +226,10 @@ IMPL.digitspan = ctx => {
   function press(k) { if (phase !== 'input') return; if (k === 'del') input = input.slice(0, -1); else if (input.length < seq.length) input += k; paint(); }
   function submit() {
     if (phase !== 'input') return; phase = 'wait';
-    if (input === seq.join('')) { ok++; pts += len; ctx.flash('ok', 'Correct'); len++; maxLen = Math.max(maxLen, len - 1); wrongRow = 0; }
-    else { bad++; ctx.flash('bad', 'It was ' + seq.join(' '), 1400); if (++wrongRow >= 2) { len = Math.max(3, len - 1); wrongRow = 0; } }
+    const want = back ? seq.slice().reverse() : seq;
+    if (back) backN++;
+    if (input === want.join('')) { ok++; if (back) backOk++; pts += len + (back ? 2 : 0); ctx.flash('ok', 'Correct'); len++; maxLen = Math.max(maxLen, len - 1); wrongRow = 0; }
+    else { bad++; ctx.flash('bad', 'Answer: ' + want.join(' '), 1400); if (++wrongRow >= 2) { len = Math.max(3, len - 1); wrongRow = 0; } }
     ctx.score(pts); ctx.after(1300, round);
   }
   ctx.key(e => {
@@ -227,7 +240,7 @@ IMPL.digitspan = ctx => {
   });
   ctx.hint('Keyboard: type characters, Backspace to correct, Enter to submit.');
   ctx.score(0); round();
-  return { result() { const t = ok + bad; return { score: pts, accuracy: t ? ok / t : null, stats: [['Longest span', maxLen], ['Correct sequences', ok], ['Wrong sequences', bad]] }; } };
+  return { result() { const t = ok + bad; return { score: pts, accuracy: t ? ok / t : null, stats: [['Longest span', maxLen], ['Correct sequences', ok], ['Wrong sequences', bad], ['Backwards correct', `${backOk}/${backN}`]] }; } };
 };
 
 /* ---------- Disconumbers ---------- */
@@ -235,17 +248,18 @@ IMPL.disconumbers = ctx => {
   let len = 3, maxLen = 3, pts = 0, orderOk = 0, sumOk = 0, rounds = 0, nums = [], seq = [], clicks = [], phase = 'show', G = 3;
   function round() {
     G = len >= 6 ? 4 : 3; rounds++;
-    nums = Array.from({ length: G * G }, () => 1 + rnd(9));
+    const hidden = len >= 5, hi = len >= 7 ? 19 : len >= 5 ? 14 : 9;
+    nums = Array.from({ length: G * G }, () => 1 + rnd(hi));
     seq = sample([...nums.keys()], len); clicks = []; phase = 'show';
-    ctx.level(`${len} circles`);
-    ctx.stage.innerHTML = `<p class="prompt" id="dq">Watch the order</p><div class="disc" style="grid-template-columns:repeat(${G},auto)">${nums.map((n, i) => `<button data-i="${i}" disabled>${n}</button>`).join('')}</div><div id="dsum"></div>`;
+    ctx.level(`${len} circles${hidden ? ' · numbers hidden' : ''}`);
+    ctx.stage.innerHTML = `<p class="prompt" id="dq">${hidden ? 'Watch the order. Numbers show only while lit' : 'Watch the order'}</p><div class="disc" style="grid-template-columns:repeat(${G},auto)">${nums.map((n, i) => `<button data-i="${i}" disabled>${hidden ? '' : n}</button>`).join('')}</div><div id="dsum"></div>`;
     const btns = $$('.disc button', ctx.stage);
     btns.forEach(b => b.onclick = () => tap(+b.dataset.i, b));
     let i = 0;
     const step = () => {
       if (i >= seq.length) { phase = 'order'; $('#dq').textContent = 'Tap the circles in the same order'; btns.forEach(b => b.disabled = false); return; }
-      const b = btns[seq[i++]]; b.classList.add('lit');
-      ctx.after(650, () => { b.classList.remove('lit'); ctx.after(250, step); });
+      const b = btns[seq[i++]]; b.classList.add('lit'); if (hidden) b.textContent = nums[+b.dataset.i];
+      ctx.after(650, () => { b.classList.remove('lit'); if (hidden) b.textContent = ''; ctx.after(250, step); });
     };
     ctx.after(600, step);
   }
@@ -299,49 +313,53 @@ IMPL.puzzle = ctx => {
     return cv.toDataURL('image/png');
   }
   const piece = (i, size) => { const r = Math.floor(i / G), c = i % G; return `background-image:var(--img);background-size:${G * size}px ${G * size}px;background-position:-${c * size}px -${r * size}px`; };
+  let building = false, moves = 0;
   function round() {
-    G = lv <= 2 ? 3 : lv <= 4 ? 4 : 5; rounds++;
-    img = makeImage(); board = Array(G * G).fill(null); tray = shuffle([...Array(G * G).keys()]); sel = null;
+    G = lv <= 2 ? 3 : lv <= 4 ? 4 : 5; rounds++; moves = 0;
+    img = makeImage(); sel = null; building = false;
+    do board = shuffle([...Array(G * G).keys()]); while (board.every((p, i) => p === i));
     ctx.level(`Level ${lv} · ${G}×${G}`);
-    let left = G === 3 ? 8 : G === 4 ? 10 : 12;
-    ctx.stage.innerHTML = `<p class="prompt">Memorise this image · <span class="mono" id="pc">${left}</span>s</p><div class="pzimg" style="background-image:url(${img})"></div><div class="btnrow"><button class="btn" id="pgo">I’m ready</button></div>`;
+    ctx.stage.style.setProperty('--img', `url(${img})`);
+    let left = 5;
+    ctx.stage.innerHTML = `<p class="prompt">Memorise this image · <span class="mono" id="pc">${left}</span>s</p><div class="pzimg" style="background-image:var(--img)"></div><div class="btnrow"><button class="btn" id="pgo">I’m ready</button></div>`;
     $('#pgo').onclick = build;
     const tick = () => { if (!$('#pc')) return; left--; if (left <= 0) return build(); $('#pc').textContent = left; ctx.after(1000, tick); };
     ctx.after(1000, tick);
   }
-  let building = false;
   function build() { if (building) return; building = true; draw(); }
   function draw() {
-    const ps = Math.floor(Math.min(300, window.innerWidth - 60) / G);
-    const ts = Math.max(44, Math.min(64, ps));
-    ctx.stage.style.setProperty('--img', `url(${img})`);
-    ctx.stage.innerHTML = `<p class="prompt">Rebuild the image</p><div class="pz">
-      <div class="pzboard" style="--ps:${ps}px;grid-template-columns:repeat(${G},var(--ps))">${board.map((p, i) => `<div data-s="${i}" style="${p == null ? '' : piece(p, ps)}"></div>`).join('')}</div>
-      <div class="pztray" style="--ps:${ts}px">${tray.map((p, i) => `<button data-t="${i}" class="${sel === i ? 'sel' : ''}" style="${piece(p, ts)}" aria-label="Piece"></button>`).join('')}</div></div>
-      <div class="btnrow"><button class="btn" id="pchk" ${tray.length ? 'disabled' : ''}>Check</button></div>`;
-    $$('.pztray button', ctx.stage).forEach(b => b.onclick = () => { sel = sel === +b.dataset.t ? null : +b.dataset.t; draw(); });
-    $$('.pzboard div', ctx.stage).forEach(d => d.onclick = () => {
-      const s = +d.dataset.s;
-      if (sel != null) { if (board[s] != null) tray.push(board[s]); board[s] = tray[sel]; tray.splice(sel, 1); sel = null; }
-      else if (board[s] != null) { tray.push(board[s]); board[s] = null; }
-      else return ctx.flash('info', 'Pick a piece from the tray first');
-      draw();
+    const ps = Math.floor(Math.min(320, window.innerWidth - 60) / G);
+    ctx.stage.innerHTML = `<p class="prompt">Swap tiles to rebuild the image · <span class="mono">${moves}</span> swaps</p>
+      <div class="pzboard" style="--ps:${ps}px;grid-template-columns:repeat(${G},var(--ps))">${board.map((p, i) => `<div data-s="${i}" tabindex="0" role="button" aria-label="Tile ${i + 1}" style="${piece(p, ps)}${sel === i ? ';outline:3px solid var(--signal);outline-offset:-3px' : ''}"></div>`).join('')}</div>
+      <div class="btnrow"><button class="btn ghost" id="pchk">Submit as is</button></div>`;
+    $$('.pzboard div', ctx.stage).forEach(d => {
+      const go = () => {
+        const s = +d.dataset.s;
+        if (sel == null) { sel = s; return draw(); }
+        if (sel !== s) { [board[sel], board[s]] = [board[s], board[sel]]; moves++; }
+        sel = null;
+        if (board.every((p, i) => p === i)) return check();
+        draw();
+      };
+      d.onclick = go; d.onkeydown = e => { if (e.key === 'Enter' || e.key === ' ') go(); };
     });
     $('#pchk').onclick = check;
   }
   function check() {
-    const right = board.filter((p, i) => p === i).length;
-    placedOk += right; placedAll += G * G; pts += right;
-    if (right === G * G) { perfect++; pts += G; lv++; ctx.flash('ok', 'Perfect rebuild'); }
-    else ctx.flash('bad', `${right} of ${G * G} pieces correct`, 1200);
-    ctx.score(pts); building = false;
-    $$('.pzboard div', ctx.stage).forEach((d, i) => d.style.outline = board[i] === i ? '3px solid var(--ok)' : '3px solid var(--bad)');
+    if (!building) return;
+    const right = board.filter((p, i) => p === i).length, n = G * G;
+    placedOk += right; placedAll += n;
+    if (right === n) { perfect++; pts += n + G * 2; lv++; ctx.flash('ok', `Solved in ${moves} swaps`); }
+    else { pts += Math.floor(right / 2); ctx.flash('bad', `${right} of ${n} tiles in place`, 1200); }
+    ctx.score(pts);
+    draw(); building = false;
+    $$('.pzboard div', ctx.stage).forEach((d, i) => { d.onclick = null; d.onkeydown = null; d.style.outline = board[i] === i ? '3px solid var(--ok)' : '3px solid var(--bad)'; d.style.outlineOffset = '-3px'; });
     $('#pchk').disabled = true;
     ctx.after(1500, round);
   }
-  ctx.hint('Tap a piece, then a slot. Tap a placed piece to return it.');
+  ctx.hint('Tap one tile, then another, to swap them. A finished image submits itself.');
   ctx.score(0); round();
-  return { result() { return { score: pts, accuracy: placedAll ? placedOk / placedAll : null, stats: [['Images rebuilt', rounds - (building ? 1 : 0)], ['Perfect rebuilds', perfect], ['Pieces correct', `${placedOk}/${placedAll}`], ['Highest level', lv]] }; } };
+  return { result() { return { score: pts, accuracy: placedAll ? placedOk / placedAll : null, stats: [['Images attempted', rounds], ['Solved', perfect], ['Tiles in place', `${placedOk}/${placedAll}`], ['Highest level', lv]] }; } };
 };
 
 /* ---------- Shapedance ---------- */
@@ -365,10 +383,12 @@ IMPL.shapedance = ctx => {
       items.push(it);
     }
     items = shuffle(items);
-    ctx.level(`Level ${lv}${useFill ? ' · fill counts' : ''}`);
+    const spin = lv >= 5;
+    items.forEach(it => it.r = spin ? 90 * rnd(4) : 0);
+    ctx.level(`Level ${lv}${useFill ? ' · fill counts' : ''}${spin ? ' · rotated' : ''}`);
     const cols = n <= 9 ? 3 : 4, gs = Math.min(84, Math.floor((Math.min(window.innerWidth, 860) - 80) / cols) - 10);
-    ctx.stage.innerHTML = `<div class="target"><span class="small muted">Find every</span>${shapeSVG(tgt.s, tgt.c, 54, tgt.f)}</div>
-      <div class="sgrid" style="--gs:${gs}px;grid-template-columns:repeat(${cols},var(--gs))">${items.map((it, i) => `<button data-i="${i}" aria-label="Item ${i + 1}">${shapeSVG(it.s, it.c, 60, it.f)}</button>`).join('')}</div>
+    ctx.stage.innerHTML = `<div class="target"><span class="small muted">Find every</span>${shapeSVG(tgt.s, tgt.c, 54, tgt.f)}${spin ? '<span class="small muted">Rotated copies count</span>' : ''}</div>
+      <div class="sgrid" style="--gs:${gs}px;grid-template-columns:repeat(${cols},var(--gs))">${items.map((it, i) => `<button data-i="${i}" aria-label="Item ${i + 1}">${shapeSVG(it.s, it.c, 60, it.f, it.r)}</button>`).join('')}</div>
       <div class="btnrow"><button class="btn" id="sdone">Done <kbd>Enter</kbd></button></div>`;
     $$('.sgrid button', ctx.stage).forEach(b => b.onclick = () => { if (lock) return; const i = +b.dataset.i; sel.has(i) ? sel.delete(i) : sel.add(i); b.classList.toggle('sel'); });
     $('#sdone').onclick = done;
@@ -441,7 +461,10 @@ IMPL.pulse = ctx => {
   const rts = [];
   ctx.stage.innerHTML = `<p class="prompt">Red dot: press <kbd style="background:var(--line)">Space</kbd> or tap. Anything else: wait.</p><div class="arena" id="ar"><div class="dot" id="dt"></div></div>`;
   const ar = $('#ar'), dt = $('#dt');
-  const lvl = () => 1 + Math.floor(ctx.elapsed() / 30);
+  // adaptive pace: accurate responses speed it up, mistakes ease it off
+  let sp = 1, cr = 0, topSp = 1;
+  const nudge = d => { sp = Math.min(8, Math.max(1, sp + d)); topSp = Math.max(topSp, sp); };
+  const lvl = () => Math.floor(sp);
   function spawn() {
     const l = lvl(); ctx.level('Speed ' + l);
     const r = Math.random(), red = r < 0.3, lure = !red && l >= 2 && r < 0.45;
@@ -452,7 +475,8 @@ IMPL.pulse = ctx => {
     const life = Math.max(480, 850 - l * 80);
     ctx.after(life, () => {
       dt.classList.remove('on');
-      if (cur && cur.red && !cur.done) { misses++; pts -= 5; ctx.flash('slow', 'Missed'); ctx.score(pts); }
+      if (cur && cur.red && !cur.done) { misses++; pts -= 5; nudge(-1); ctx.flash('slow', 'Missed'); ctx.score(pts); }
+      else if (cur && !cur.red && !cur.done) { cr++; pts += 2; nudge(0.25); ctx.score(pts); }
       cur = null;
       ctx.after(Math.max(350, 1000 - l * 90) + rnd(500), spawn);
     });
@@ -460,14 +484,14 @@ IMPL.pulse = ctx => {
   function respond() {
     if (cur && !cur.done) {
       cur.done = true;
-      if (cur.red) { const rt = performance.now() - cur.t; rts.push(rt); hits++; pts += 10 + Math.max(0, Math.round((600 - rt) / 60)); ctx.flash('ok', Math.round(rt) + ' ms'); }
-      else { fas++; if (cur.lure) lureFa++; pts -= 10; ctx.flash('bad', 'Not red'); }
-    } else if (!cur) { fas++; pts -= 10; ctx.flash('bad', 'No dot'); }
+      if (cur.red) { const rt = performance.now() - cur.t; rts.push(rt); hits++; pts += 10 + Math.max(0, Math.round((600 - rt) / 60)); nudge(0.5); ctx.flash('ok', Math.round(rt) + ' ms'); }
+      else { fas++; if (cur.lure) lureFa++; pts -= 10; nudge(-1); ctx.flash('bad', 'Not red'); }
+    } else if (!cur) { fas++; pts -= 10; nudge(-1); ctx.flash('bad', 'No dot'); }
     ctx.score(pts);
   }
   ar.addEventListener('pointerdown', e => { e.preventDefault(); if (ctx.alive) respond(); });
   ctx.key(e => { if (e.key === ' ' && !e.repeat) respond(); });
-  ctx.hint('Speed rises every 30 seconds. Orange dots are lures.');
+  ctx.hint('Accurate play speeds the dots up; mistakes slow them down. Orange dots are lures.');
   ctx.score(0); ctx.after(1000, spawn);
-  return { result() { const reds = hits + misses; return { score: Math.max(0, pts), accuracy: reds + fas ? hits / (reds + fas) : null, stats: [['Red dots hit', `${hits}/${reds}`], ['Missed reds', misses], ['False alarms', fas], ['Fell for orange lure', lureFa], ['Median reaction', ms(median(rts))]] }; } };
+  return { result() { const reds = hits + misses; return { score: Math.max(0, pts), accuracy: reds + cr + fas ? (hits + cr) / (reds + cr + fas) : null, stats: [['Red dots hit', `${hits}/${reds}`], ['Correctly ignored', cr], ['Missed reds', misses], ['False alarms', fas], ['Fell for orange lure', lureFa], ['Top speed', Math.floor(topSp)], ['Median reaction', ms(median(rts))]] }; } };
 };
