@@ -220,6 +220,7 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
   window.scrollTo(0, 0);
   const timers = new Set(), keys = [];
   let alive = true, fbT = null, t0 = 0, iv = null, game = null, lastLevel = null, lastScore = 0, lastTick = null, step = 0, wins = 0;
+  const trace = []; // level number over time, for the results chart
   const wrap = $('.stagewrap');
   const showStep = i => { step = Math.max(0, Math.min(meta.how.length - 1, i)); $('#cnum').textContent = `Step ${step + 1} of ${meta.how.length}`; $('#ctext').textContent = meta.how[step]; $('#cprev').disabled = step === 0; $('#cnext').disabled = step === meta.how.length - 1; };
   if (tutorial) { $('#cprev').onclick = () => showStep(step - 1); $('#cnext').onclick = () => showStep(step + 1); showStep(0); }
@@ -235,6 +236,7 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
       const a = levelNum(lastLevel), b = levelNum(t);
       if (!dir && a != null && b != null) dir = b > a ? 'up' : b < a ? 'down' : null;
       el.textContent = t;
+      if (b != null) trace.push({ t: ctx.elapsed(), n: b });
       if (lastLevel != null) {
         anim(el, 'pop');
         if (dir === 'up') { Sfx.play('level'); anim(wrap, 'hit-level'); }
@@ -291,6 +293,8 @@ function startGame(meta, { quick = false, onDone = null, mock = false, label = '
       focusMain(); return;
     }
     const r = game.result();
+    r.trace = trace.concat(trace.length ? [{ t: Math.min(total, ctx.elapsed()), n: trace[trace.length - 1].n }] : []);
+    r.levelLabel = (META_BY[meta.id] && $('#lv') ? $('#lv').textContent : '').replace(/\d+.*$/, '').trim() || 'Level';
     const att = { game: meta.id, ts: Date.now(), quick, mock, secs: Math.round(Math.min(total, ctx.elapsed())),
       score: meta.scored ? (r.score ?? 0) : null, accuracy: r.accuracy ?? null, stats: r.stats || [], profile: r.profile || null };
     Store.add(att);
@@ -501,11 +505,24 @@ function resultBody(meta, att, r) {
   if (r.profile) prof = `<div class="panel"><h3>Your profile</h3><div class="bars" style="margin-top:14px">${r.profile.map(p => p.right != null
     ? `<div class="bar2"><span>${p.left}</span><div class="t"><i style="left:${p.value}%"></i></div><span class="r">${p.right}</span></div>`
     : `<div class="bar1"><span>${p.label}</span><div class="t"><i style="width:${p.value}%"></i></div><span class="mono">${Math.round(p.value)}</span></div>`).join('')}</div>${r.note ? `<p class="small muted" style="margin-top:14px">${r.note}</p>` : ''}</div>`;
+  const lvl = r.trace && new Set(r.trace.map(p => p.n)).size > 1 ? `<div class="panel"><h3>${esc(r.levelLabel || 'Level')} over time</h3>${levelChart(r.trace)}<p class="small muted" style="margin-top:6px">The game adapts to you. A line that climbs, dips and settles shows where your current limit is; practising pushes that plateau higher.</p></div>` : '';
   let rev = '';
   if (r.review && r.review.length) rev = `<div class="panel"><h3>Reply review</h3><div class="review">${r.review.map((x, i) => `<div class="rv ${x.q === 2 ? 'good' : x.q === 1 ? 'ok' : 'weak'}">
       <p class="small muted">${i + 1}. “${esc(x.prompt)}”</p><p><b>You:</b> ${esc(x.mine)} <span class="chip">${['weak', 'okay', 'strongest'][x.q]}</span></p>
       ${x.q < 2 ? `<p><b>Strongest:</b> ${esc(x.best)}</p>` : ''}<p class="small muted">${esc(x.why)}</p></div>`).join('')}</div></div>`;
-  return top + stats + prof + rev;
+  return top + stats + lvl + prof + rev;
+}
+function levelChart(tr) {
+  const W = 560, H = 160, p = 34, T = Math.max(1, tr[tr.length - 1].t);
+  const lo = Math.min(...tr.map(x => x.n)), hi = Math.max(...tr.map(x => x.n));
+  const X = t => p + t / T * (W - 2 * p), Y = n => H - 24 - (n - lo) / Math.max(1, hi - lo) * (H - 48);
+  let d = `M${X(tr[0].t)} ${Y(tr[0].n)}`;
+  for (let i = 1; i < tr.length; i++) d += ` H${X(tr[i].t)} V${Y(tr[i].n)}`;
+  const ticks = []; for (let n = lo; n <= hi; n += Math.max(1, Math.ceil((hi - lo) / 4))) ticks.push(n);
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="Level over time, from ${lo} to ${hi}">
+    ${ticks.map(n => `<line class="grid" x1="${p}" x2="${W - p}" y1="${Y(n)}" y2="${Y(n)}"/><text x="${p - 6}" y="${Y(n) + 4}" text-anchor="end">${n}</text>`).join('')}
+    <path class="line" d="${d}"/><circle class="pt" cx="${X(tr[tr.length - 1].t)}" cy="${Y(tr[tr.length - 1].n)}" r="4"/>
+    <text x="${p}" y="${H - 4}">0:00</text><text x="${W - p}" y="${H - 4}" text-anchor="end">${fmtTime(T)}</text></svg>`;
 }
 function showResult(meta, att, r) {
   app().innerHTML = `<div class="result">${resultBody(meta, att, r)}

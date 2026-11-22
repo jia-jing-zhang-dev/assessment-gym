@@ -152,7 +152,7 @@ function faceSVG(em, k, skin, hair) {
 }
 IMPL.emotions = ctx => {
   const SKIN = ['#f3d2b5', '#e0ac85', '#c68a62', '#8d5a3b', '#5c3a26'], HAIR = ['#2b1d14', '#5a3a22', '#a36b2f', '#1b1b1b', '#7d7d7d'];
-  let lv = 1, streak = 0, pts = 0, ok = 0, bad = 0, lock = false, t0, answer;
+  let lv = 1, maxLv = 1, streak = 0, pts = 0, ok = 0, bad = 0, lock = false, t0, answer;
   const rts = [], confus = {};
   function show() {
     lock = false; answer = pick(EMO);
@@ -165,7 +165,7 @@ IMPL.emotions = ctx => {
   }
   function choose(b) {
     if (lock) return; lock = true; rts.push(performance.now() - t0);
-    if (b.dataset.o === answer) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Correct'); if (++streak >= 3) { lv++; streak = 0; } }
+    if (b.dataset.o === answer) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Correct'); if (++streak >= 3) { lv++; maxLv = Math.max(maxLv, lv); streak = 0; } }
     else { bad++; streak = 0; b.classList.add('wrong'); $(`.opts button[data-o="${answer}"]`, ctx.stage).classList.add('right'); confus[answer] = (confus[answer] || 0) + 1; ctx.flash('bad', 'It was ' + answer.toLowerCase()); lv = Math.max(1, lv - 1);
       ctx.explain(`${answer}: ${CUES[answer]}`); }
     ctx.score(pts); ctx.after(ctx.tutorial && b.dataset.o !== answer ? 2400 : 900, show);
@@ -175,7 +175,7 @@ IMPL.emotions = ctx => {
   ctx.score(0); show();
   return { result() {
     const t = ok + bad, worst = Object.entries(confus).sort((a, b) => b[1] - a[1])[0];
-    return { score: pts, accuracy: t ? ok / t : null, stats: [['Faces', t], ['Correct', ok], ['Highest level', lv], ['Median response', ms(median(rts))], ['Most missed', worst ? worst[0] : '–']] };
+    return { score: pts, accuracy: t ? ok / t : null, stats: [['Faces', t], ['Correct', ok], ['Highest level', maxLv], ['Median response', ms(median(rts))], ['Most missed', worst ? worst[0] : '–']] };
   } };
 };
 

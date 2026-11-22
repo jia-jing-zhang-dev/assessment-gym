@@ -3,7 +3,8 @@
 
 /* ---------- Flashback (n-back) ---------- */
 IMPL.flashback = ctx => {
-  const LV = [{ n: 1, c: 0 }, { n: 2, c: 0 }, { n: 3, c: 0 }, { n: 1, c: 1 }, { n: 2, c: 1 }, { n: 3, c: 1 }];
+  // one new demand per rung: deeper memory or colour, never a step back to an easier rule
+  const LV = [{ n: 1, c: 0 }, { n: 2, c: 0 }, { n: 2, c: 1 }, { n: 3, c: 0 }, { n: 3, c: 1 }];
   const SH = Object.keys(SHAPES), CO = STIM.slice(0, 4);
   let li = 0, maxLi = 0, seq = [], bOk = 0, bN = 0, answered = true, can = false, t0 = 0, pts = 0;
   const st = { hit: 0, cr: 0, miss: 0, fa: 0, slow: 0 }, rts = [];
@@ -14,7 +15,7 @@ IMPL.flashback = ctx => {
   ctx.hint('Keyboard: ← Match · → No match. On touch screens, swipe the card left or right.');
   const q = $('#fq'), card = $('#fc'), by = $('#fy'), bn = $('#fn');
   const L = () => LV[li];
-  const label = () => `${L().n}-back · ${L().c ? 'shape + colour' : 'shape only'}`;
+  const label = () => `Level ${li + 1} · ${L().n}-back${L().c ? ' + colour' : ''}`;
   const same = (a, b) => a.s === b.s && (!L().c || a.c === b.c);
   function gen() {
     const l = L(), k = seq.length, back = seq[k - l.n];
@@ -46,7 +47,7 @@ IMPL.flashback = ctx => {
         if (bN >= 10) {
           const acc = bOk / bN;
           if (acc >= 0.8 && li < LV.length - 1) { li++; maxLi = Math.max(maxLi, li); setLevel('up'); return inter('Level up'); }
-          if (acc < 0.5 && li > 0) { li--; setLevel('down'); return inter('Level down'); }
+          if (acc < 0.6 && li > 0) { li--; setLevel('down'); return inter('Level down'); }
           bOk = 0; bN = 0;
         }
         next();
@@ -102,10 +103,11 @@ IMPL.numerosity = ctx => {
     quot: { sym: '÷', verb: () => `divide to give`, val: v => Math.max(...v) / Math.min(...v) },
   };
   function puzzle() {
-    const n = Math.min(6 + lv, 12), hi = 9 + lv * 3;
+    // gentle growth: one more bubble every two levels, numbers +2 per level (capped)
+    const n = Math.min(6 + Math.ceil(lv / 2), 12), hi = Math.min(9 + lv * 2, 40);
     const pool = ['sum', ...(lv >= 2 ? ['diff'] : []), ...(lv >= 4 ? ['product'] : []), ...(lv >= 5 ? ['quot'] : [])];
     type = pick(pool);
-    k = type === 'sum' ? (lv < 3 ? 2 : lv < 6 ? 3 : 4) : 2;
+    k = type === 'sum' ? (lv <= 2 ? 2 : lv <= 6 ? 3 : 4) : 2;
     tiles = Array.from({ length: n }, () => type === 'product' || type === 'quot' ? 2 + rnd(11) : 1 + rnd(hi));
     let idx = sample([...tiles.keys()], k); solIdx = idx;
     if (type === 'quot') { const b = tiles[idx[0]]; tiles[idx[1]] = b * (2 + rnd(6)); }
@@ -132,7 +134,7 @@ IMPL.numerosity = ctx => {
     rts.push(performance.now() - t0);
     if (val === target) { ok++; pts += k * lv; streak++; misses = 0; ctx.flash('ok', 'Correct'); if (streak >= 2) { lv++; maxLv = Math.max(maxLv, lv); streak = 0; } }
     else {
-      bad++; streak = 0; misses++; ctx.flash('bad', `${val} ≠ ${target}`); if (misses >= 2) { lv = Math.max(1, lv - 1); misses = 0; }
+      bad++; streak = 0; ctx.flash('bad', `${val} ≠ ${target}`); lv = Math.max(1, lv - 1); // 2-up / 1-down staircase (~71% accuracy)
       const s = solIdx.map(i => tiles[i]);
       ctx.explain(`One answer was ${s.join(` ${OPS[type].sym} `)} = ${target}. Start from the largest number and work out what is still needed.`);
     }
@@ -168,12 +170,12 @@ IMPL.pathfinder = ctx => {
     N = lv <= 2 ? 4 : lv <= 4 ? 5 : 6;
     path = genPath(); sr = path[0][0]; er = path[path.length - 1][0];
     cells = Array(N * N).fill(null); tray = [];
-    const lockP = Math.max(0.15, 0.5 - lv * 0.06);
+    const lockP = Math.max(0.2, 0.5 - lv * 0.04); // fewer fixed hints as you climb
     path.forEach((p, i) => {
       const m = (i === 0 ? 8 : dirBit(p, path[i - 1])) | (i === path.length - 1 ? 2 : dirBit(p, path[i + 1]));
       if (Math.random() < lockP && i !== 0) cells[p[0] * N + p[1]] = { m, locked: true }; else tray.push(m);
     });
-    for (let i = 0; i < 2; i++) tray.push(pick(TYPES));
+    for (let i = 0, d = Math.min(5, 1 + Math.floor(lv / 2)); i < d; i++) tray.push(pick(TYPES)); // more decoys as you climb
     tray = shuffle(tray); sel = null; t0 = performance.now();
     ctx.level(`Level ${lv} · ${N}×${N}`); draw();
   }
@@ -224,7 +226,7 @@ IMPL.digitspan = ctx => {
   let len = 3, maxLen = 3, wrongRow = 0, pts = 0, ok = 0, bad = 0, seq = [], input = '', phase = 'show', useLetters = false, back = false, backOk = 0, backN = 0;
   function round() {
     useLetters = len >= 5;
-    back = len >= 5 && Math.random() < 0.35;
+    back = len >= 6 && Math.random() < 0.35; // letters arrive at 5, backwards rounds one step later
     seq = Array.from({ length: len }, () => useLetters && Math.random() < 0.4 ? pick(LET) : String(rnd(10)));
     for (let i = 1; i < seq.length; i++) if (seq[i] === seq[i - 1]) seq[i] = /\d/.test(seq[i]) ? String((+seq[i] + 1) % 10) : LET[(LET.indexOf(seq[i]) + 1) % LET.length];
     ctx.level(`Span ${len}${useLetters ? ' · digits + letters' : ''}${back ? ' · backwards' : ''}`);
@@ -276,8 +278,9 @@ IMPL.digitspan = ctx => {
 IMPL.disconumbers = ctx => {
   let len = 3, maxLen = 3, pts = 0, orderOk = 0, sumOk = 0, rounds = 0, nums = [], seq = [], clicks = [], phase = 'show', G = 3;
   function round() {
-    G = len >= 6 ? 4 : 3; rounds++;
-    const hidden = len >= 5, hi = len >= 7 ? 19 : len >= 5 ? 14 : 9;
+    // one new demand per step: bigger numbers (5), hidden numbers (6), 4×4 grid (7), bigger again (8)
+    G = len >= 7 ? 4 : 3; rounds++;
+    const hidden = len >= 6, hi = len >= 8 ? 19 : len >= 5 ? 14 : 9;
     nums = Array.from({ length: G * G }, () => 1 + rnd(hi));
     seq = sample([...nums.keys()], len); clicks = []; phase = 'show';
     ctx.level(`${len} circles${hidden ? ' · numbers hidden' : ''}`);
@@ -346,7 +349,7 @@ IMPL.puzzle = ctx => {
   const piece = (i, size) => { const r = Math.floor(i / G), c = i % G; return `background-image:var(--img);background-size:${G * size}px ${G * size}px;background-position:-${c * size}px -${r * size}px`; };
   let building = false, moves = 0;
   function round() {
-    G = lv <= 2 ? 3 : lv <= 4 ? 4 : 5; rounds++; moves = 0;
+    G = lv <= 2 ? 3 : 4; rounds++; moves = 0; // capped at 4×4: 5×5 can't be memorised in a 5-second look
     img = makeImage(); sel = null; building = false;
     do board = shuffle([...Array(G * G).keys()]); while (board.every((p, i) => p === i));
     ctx.level(`Level ${lv} · ${G}×${G}`);
@@ -396,7 +399,7 @@ IMPL.puzzle = ctx => {
 /* ---------- Shapedance ---------- */
 IMPL.shapedance = ctx => {
   const SH = ['circle', 'square', 'triangle', 'star', 'diamond', 'hexagon'], CO = STIM.slice(0, 4), FI = ['solid', 'outline', 'striped'];
-  let lv = 1, pts = 0, hits = 0, fas = 0, misses = 0, perfect = 0, rounds = 0, items = [], sel = new Set(), tgt, lock = false;
+  let lv = 1, pts = 0, hits = 0, fas = 0, misses = 0, perfect = 0, rounds = 0, items = [], sel = new Set(), tgt, lock = false, missRow = 0, maxLv = 1;
   const eq = (a, b) => a.s === b.s && a.c === b.c && a.f === b.f;
   function round() {
     rounds++; lock = false; sel = new Set();
@@ -407,7 +410,7 @@ IMPL.shapedance = ctx => {
       let it;
       do {
         it = { ...tgt };
-        const lure = Math.random() < 0.65;
+        const lure = Math.random() < Math.min(0.9, 0.5 + lv * 0.07); // distractors get closer to the target as you climb
         if (lure) { const which = pick(useFill ? ['s', 'c', 'f'] : ['s', 'c']); if (which === 's') it.s = pick(SH); else if (which === 'c') it.c = pick(CO); else it.f = pick(FI); }
         else it = { s: pick(SH), c: pick(CO), f: useFill ? pick(FI) : 'solid' };
       } while (eq(it, tgt));
@@ -433,8 +436,9 @@ IMPL.shapedance = ctx => {
     });
     hits += h; fas += f; misses += m;
     pts = Math.max(0, pts + h - f + (f + m === 0 ? lv : 0));
-    if (f + m === 0) { perfect++; lv++; ctx.flash('ok', 'All found'); }
+    if (f + m === 0) { perfect++; lv++; maxLv = Math.max(maxLv, lv); missRow = 0; ctx.flash('ok', 'All found'); }
     else {
+      if (++missRow >= 2) { lv = Math.max(1, lv - 1); missRow = 0; } // two imperfect rounds in a row step you back
       ctx.flash('bad', `${h} found · ${m} missed · ${f} wrong`, 1200);
       const need = ['shape', 'colour', ...(tgt.f !== 'solid' || lv >= 3 ? ['fill'] : [])].join(', ').replace(/, ([^,]*)$/, ' and $1');
       ctx.explain(`Green outlines are the matches. A match has the same ${need}${lv >= 5 ? '; rotation doesn’t matter' : ''}. Red outlines were wrong picks or missed matches.`);
@@ -444,12 +448,12 @@ IMPL.shapedance = ctx => {
   ctx.key(e => { if (e.key === 'Enter') done(); });
   ctx.hint('Tap every exact match, then press Done.');
   ctx.score(0); round();
-  return { result() { const t = hits + fas + misses; return { score: pts, accuracy: t ? hits / t : null, stats: [['Rounds', rounds], ['Perfect rounds', perfect], ['Matches found', hits], ['Matches missed', misses], ['Wrong selections', fas], ['Highest level', lv]] }; } };
+  return { result() { const t = hits + fas + misses; return { score: pts, accuracy: t ? hits / t : null, stats: [['Rounds', rounds], ['Perfect rounds', perfect], ['Matches found', hits], ['Matches missed', misses], ['Wrong selections', fas], ['Highest level', maxLv]] }; } };
 };
 
 /* ---------- Singularity ---------- */
 IMPL.singularity = ctx => {
-  let lv = 1, streak = 0, pts = 0, ok = 0, bad = 0, lock = false, t0;
+  let lv = 1, maxLv = 1, streak = 0, pts = 0, ok = 0, bad = 0, lock = false, t0;
   const rts = [];
   const norm = cs => { const r0 = Math.min(...cs.map(c => c[0])), c0 = Math.min(...cs.map(c => c[1])); return cs.map(([r, c]) => [r - r0, c - c0]); };
   const key = cs => norm(cs).map(c => c.join(',')).sort().join(';');
@@ -480,15 +484,15 @@ IMPL.singularity = ctx => {
     $$('.sgrid button', ctx.stage).forEach(b => b.onclick = () => {
       if (lock) return; lock = true; rts.push(performance.now() - t0);
       const i = +b.dataset.i;
-      if (i === odd) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Found it'); if (++streak >= 2) { lv++; streak = 0; } }
-      else { bad++; streak = 0; b.classList.add('wrong'); $$('.sgrid button', ctx.stage)[odd].classList.add('right'); ctx.flash('bad', 'Not that one'); lv = Math.max(1, lv - (bad % 2 === 0 ? 1 : 0));
+      if (i === odd) { ok++; pts += lv; b.classList.add('right'); ctx.flash('ok', 'Found it'); if (++streak >= 2) { lv++; maxLv = Math.max(maxLv, lv); streak = 0; } }
+      else { bad++; streak = 0; b.classList.add('wrong'); $$('.sgrid button', ctx.stage)[odd].classList.add('right'); ctx.flash('bad', 'Not that one'); lv = Math.max(1, lv - 1); // 2-up / 1-down
         ctx.explain(`The odd one (green) is a mirror image of the others${rotate ? '. The rest are only rotated, which still counts as the same shape' : ''}.`); }
       ctx.score(pts); ctx.after(ctx.tutorial && i !== odd ? 2200 : 800, round);
     });
   }
   ctx.hint('Rotations are the same shape. Mirror images are different.');
   ctx.score(0); round();
-  return { result() { const t = ok + bad; return { score: pts, accuracy: t ? ok / t : null, stats: [['Found', ok], ['Wrong picks', bad], ['Highest level', lv], ['Median find time', ms(median(rts))]] }; } };
+  return { result() { const t = ok + bad; return { score: pts, accuracy: t ? ok / t : null, stats: [['Found', ok], ['Wrong picks', bad], ['Highest level', maxLv], ['Median find time', ms(median(rts))]] }; } };
 };
 
 /* ---------- Pulse (go / no-go) ---------- */
